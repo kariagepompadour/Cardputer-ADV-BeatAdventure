@@ -1021,29 +1021,27 @@ static void drawViz(uint32_t now) {
                   (unsigned long)repBeats, (unsigned long)repPlain, (unsigned)ESP.getFreeHeap());
     repMs = now; repFrames = 0; repUpMax = 0; repDrMax = 0; repBeats = 0; repPlain = 0;
   }
+  // The game screen's words are white (the tracker's PULSE green, onset amber) with a black shadow, so they read over sky, sea and sand.
+  auto label = [&](const char* t, int x, int y, uint16_t col) {
+    canvas.setTextColor(COL_BG);
+    canvas.drawString(t, x + 1, y + 1);
+    canvas.setTextColor(col);
+    canvas.drawString(t, x, y);
+  };
+  canvas.setTextSize(1);
   {
     char b[40];
-    canvas.setTextSize(1);
-    canvas.setTextColor(COL_DIM);
     snprintf(b, sizeof b, "%lufps up%.1f dr%.1f b%lu", (unsigned long)shownFps, shownUpMax / 1000.0f, shownDrMax / 1000.0f, (unsigned long)shownBeats);
-    canvas.drawString(b, 4, 10);
+    label(b, 4, 10, COL_FG);
   }
-  {  // the status line, as in the web demo: the stage, the day, the tempo (green PULSE when the tracker holds a clear pulse, amber onset when not)
+  {  // the status line, as in the web demo: the stage, the day, the tempo; PULSE (green) when the tracker holds a clear pulse, onset (amber) when not
     char b[64];
-    canvas.setTextSize(1);
     snprintf(b, sizeof b, "%s  DAY %d  %d bpm", beatadv::stageName(viz), beatadv::dayNumber(viz), (int)lrintf(60.0f / viz.T));
-    canvas.setTextColor(COL_BG);
-    canvas.drawString(b, 5, 128);   // a 1 px shadow keeps it readable over bright skies and water
-    canvas.setTextColor(0xCE59);
-    canvas.drawString(b, 4, 127);
-    if (viz.sounding) {
-      canvas.setTextColor(viz.bt.locked ? COL_OK : COL_AMBER);
-      canvas.drawString(viz.bt.locked ? "PULSE" : "onset", 180, 117);
-    } else {
-      canvas.setTextColor(COL_FG);
-      canvas.drawString("BEAT ADVENTURE", 70, 56);
-      canvas.setTextColor(COL_DIM);
-      canvas.drawString("play some music", 69, 70);
+    label(b, 4, 127, COL_FG);
+    if (viz.sounding) label(viz.bt.locked ? "PULSE" : "onset", 180, 117, viz.bt.locked ? COL_OK : COL_AMBER);
+    else {
+      label("BEAT ADVENTURE", 70, 56, COL_FG);
+      label("play some music", 69, 70, COL_FG);
     }
   }
 
