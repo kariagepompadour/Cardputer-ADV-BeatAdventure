@@ -20,6 +20,7 @@
   The game itself comes stage by stage and will live in this namespace.
 */
 #pragma once
+#include <new>
 #include <stdint.h>
 #include <math.h>
 #include <string.h>
@@ -205,7 +206,7 @@ static void setupRate(State& s, uint32_t rate) {
 }
 
 static void init(State& s, uint32_t nowMs) {
-  s = State();
+  new (&s) State();   // built in place: a State is about 7 KB, too much for a temporary on the 8 KB stack
   s.lastNow = nowMs / 1000.0;
   s.ready = true;
   gameInit(s.game, s.lastNow);

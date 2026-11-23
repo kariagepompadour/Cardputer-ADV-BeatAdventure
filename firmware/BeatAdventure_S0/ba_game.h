@@ -11,6 +11,7 @@
 */
 #pragma once
 #include <string.h>
+#include <new>
 #include "ba_gfx.h"
 #include "ba_hero.h"
 
@@ -166,18 +167,19 @@ struct Game {
 
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
-  if (s == SC_LINER) G.cl = Liner();
-  if (s == SC_WALL) G.wl = Wall();
-  if (s == SC_VINES) G.vn = Vines();
-  if (s == SC_BOAT) G.bt = Boat();
-  if (s == SC_CAVERN) { uint32_t r = G.bc.rng; G.cn = Cavern(); G.bc.rng = r; }
-  if (s == SC_CAVE) { uint32_t r = G.bc.rng; G.cv = Cave(); G.bc.rng = r; G.cv.lastArr = now; G.cv.nextArrow = now + 6; G.cv.roofN = -2; }
-  if (s == SC_RIVER) { uint32_t r = G.bc.rng; G.rv = River(); G.bc.rng = r; G.rv.lastArr = now; G.rv.nextLife = now + 2; }
-  if (s == SC_BEACH || s == SC_FOREST || s == SC_FOREST3) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s != SC_BEACH); G.bc.hills = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
+  if (s == SC_LINER) new (&G.cl) Liner();
+  if (s == SC_WALL) new (&G.wl) Wall();
+  if (s == SC_VINES) new (&G.vn) Vines();
+  if (s == SC_BOAT) new (&G.bt) Boat();
+  if (s == SC_CAVERN) { uint32_t r = G.bc.rng; new (&G.cn) Cavern(); G.bc.rng = r; }
+  if (s == SC_CAVE) { uint32_t r = G.bc.rng; new (&G.cv) Cave(); G.bc.rng = r; G.cv.lastArr = now; G.cv.nextArrow = now + 6; G.cv.roofN = -2; }
+  if (s == SC_RIVER) { uint32_t r = G.bc.rng; new (&G.rv) River(); G.bc.rng = r; G.rv.lastArr = now; G.rv.nextLife = now + 2; }
+  if (s == SC_BEACH || s == SC_FOREST || s == SC_FOREST3) { uint32_t r = G.bc.rng; new (&G.bc) Beach(); G.bc.rng = r; G.bc.forest = (s != SC_BEACH); G.bc.hills = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST || G.scene == SC_FOREST3; }
 static void switchTo(Game& G, Scene s) { if (G.fadeDir) return; G.next = s; G.fadeDir = 1; G.fade = 0; }
-static void gameInit(Game& G, double now) { G = Game(); HC = HeroCtx(); setScene(G, SC_LINER, now); }
+static void gameInit(Game& G, double now) { new (&G) Game();   // built in place (a Game is over 3 KB: no temporary on the small stack)
+  HC = HeroCtx(); setScene(G, SC_LINER, now); }
 
 static void updateLiner(Game& G, const AudioIn& A, float dt, double now) {
   Liner& c = G.cl;

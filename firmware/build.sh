@@ -21,6 +21,14 @@ arduino-cli compile --clean --fqbn m5stack:esp32:m5stack_cardputer:PartitionSche
   --build-property "compiler.c.extra_flags=$MAPS" --build-property "compiler.cpp.extra_flags=$MAPS" \
   --build-property "compiler.c.elf.extra_flags=-Wl,--wrap=dcd_edpt_iso_activate -Wl,--wrap=tinyusb_add_string_descriptor -Wl,--wrap=tinyusb_enable_interface" \
   --output-dir "$OUT" "$SKETCH"
+# A guard against a crash seen in B16: the game's functions run on the 8 KB loop-task stack, and a function that builds a big
+# state as a temporary can overflow it on start-up. Refuse to publish a build where one of the game's functions (beatadv::) takes
+# more than 2.5 KB of stack for itself.
+OBJDUMP=$(ls "$HOME"/Library/Arduino15/packages/m5stack/tools/esp-x32/*/bin/xtensa-esp32s3-elf-objdump 2>/dev/null | tail -1)
+if [ -n "$OBJDUMP" ] && [ -f "$OUT/$SKETCH.ino.elf" ]; then
+  BIG=$("$OBJDUMP" -d --no-show-raw-insn "$OUT/$SKETCH.ino.elf" 2>/dev/null | awk '/^[0-9a-f]+ <.*>:/{name=$2} /entry\ta1, [0-9x]+/{n=$NF; v=n; if (n ~ /^0x/) { v=0; h=substr(n,3); for (k=1;k<=length(h);k++) v=v*16+index("0123456789abcdef", substr(h,k,1))-1 } if (v > 2560 && name ~ /beatadv/) print v, name}')
+  if [ -n "$BIG" ]; then echo "STACK GUARD: a game function takes too much stack:" >&2; echo "$BIG" >&2; exit 1; fi
+fi
 cp "$OUT/$SKETCH.ino.bin" "$SKETCH/"
 (cd "$SKETCH" && shasum -a 256 "$SKETCH.ino.bin" > SHA256SUMS.txt && cat SHA256SUMS.txt)
 rm -rf "$OUT"
