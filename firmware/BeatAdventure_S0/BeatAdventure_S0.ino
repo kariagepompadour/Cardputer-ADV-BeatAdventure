@@ -994,6 +994,7 @@ static void drawScreen(uint32_t fillNow, uint32_t elapsedS) {
 // stub screen (beatadv.h); the game comes stage by stage.
 static constexpr uint32_t FRAME_MS = 33;
 static bool vizView = false;
+static bool showDiag = false;   // (B1d) the numbers on the game screen (frames a second, times, the stage, the day, the tempo, PULSE / onset): off while playing, on with the d key
 static beatadv::State viz;
 static std::atomic<uint32_t> drawMaxUs{0};     // slowest game frame (analysis + draw + push) since the last report
 
@@ -1032,17 +1033,13 @@ static void drawViz(uint32_t now) {
   {
     char b[40];
     snprintf(b, sizeof b, "%lufps up%.1f dr%.1f b%lu", (unsigned long)shownFps, shownUpMax / 1000.0f, shownDrMax / 1000.0f, (unsigned long)shownBeats);
-    label(b, 4, 10, COL_FG);
+    if (showDiag) label(b, 4, 10, COL_FG);
   }
-  {  // the status line, as in the web demo: the stage, the day, the tempo; PULSE (green) when the tracker holds a clear pulse, onset (amber) when not
+  if (showDiag) {  // the numbers, with the d key only (KeySpeaker's game screen shows no status line either): the stage, the day, the tempo, PULSE (green) when the tracker holds a clear pulse, onset (amber) when not
     char b[64];
     snprintf(b, sizeof b, "%s  DAY %d  %d bpm", beatadv::stageName(viz), beatadv::dayNumber(viz), (int)lrintf(60.0f / viz.T));
     label(b, 4, 127, COL_FG);
     if (viz.sounding) label(viz.bt.locked ? "PULSE" : "onset", 180, 117, viz.bt.locked ? COL_OK : COL_AMBER);
-    else {
-      label("BEAT ADVENTURE", 70, 56, COL_FG);
-      label("play some music", 69, 70, COL_FG);
-    }
   }
 
   // Status line, only when something is wrong (S5-13, the user's call; until then it was always there, dim): not
@@ -1605,6 +1602,10 @@ static void keyService() {
         Serial.println("[KEY] counters reset");
         acted = true;
         break;
+      case 'd':   // (B1d) on the game screen: show or hide the numbers (fps, analysis and drawing times, beats a second, PULSE / onset)
+        showDiag = !showDiag;
+        acted = true;
+        break;
       case 'v':
         setMode(splashOn || mode == MODE_GAME ? MODE_DATA : MODE_GAME);
         acted = true;
@@ -2108,7 +2109,7 @@ static void drawSpeakerHelp() {
   const KeyHelp LEFT_MP3[] = {{"space", "pause/play"}, {", /", "prev/next"}, {"- =", "volume"}, {"b", "bass cut"}, {"[ ] \\", "PC only"}};
   const KeyHelp* LEFT = mp3On ? LEFT_MP3 : LEFT_PC;
   const int nLeft = mp3On ? 5 : 6;
-  const KeyHelp RIGHT[] = {{"v", "measure/game"}, {"r", "reset counts"}, {"h", "close help"},
+  const KeyHelp RIGHT[] = {{"v", "measure/game"}, {mode == MODE_GAME ? "d" : "r", mode == MODE_GAME ? "show numbers" : "reset counts"}, {"h", "close help"},
                            {"Fn+M", "next mode"}, {"Fn+O", "Mac/Win"}, {"Fn+I", micOn ? "input: MIC" : auxOn ? "input: AUX" : mp3On ? "input: MP3" : "input: USB"}};
   int y = 30;
   for (int i = 0; i < nLeft; i++) {

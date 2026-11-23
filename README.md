@@ -13,8 +13,8 @@ beats. The explorer plays by himself; you watch.
 - The game screen shows the first stage of the web demo, **the liner**: the explorer climbs the left ladder (a rung on every beat; he clings and
   waits when the music goes quiet), looks out to sea from the bridge roof, crosses it, climbs down the right ladder and walks down the
   gangway to the shore, with gulls, clouds and the 30-band equalizer as foam along the bottom. The picture follows the web demo's. It starts
-  again after the shore until the next stage (the beach) is ported. The top left shows the frames a second, the analysis and drawing
-  times and the beats a second, for checking on the device.
+  again after the shore until the next stage (the beach) is ported. There is no text on the game screen while it plays (as in KeySpeaker); the `d` key shows the frames a second, the analysis and drawing
+  times, the beats a second, the stage, the day and the tempo, for checking on the device.
 - `firmware/BeatAdventure_S0/beatadv.h` is a C++ port of the web demo's beat tracker (`beat.js`) and of its sound analysis. On a
   computer it gives the same results as the web demo's own test (`host/run_tests.sh`; the output matches `node test/beat.test.js`
   line for line). **Nothing has been tried on a Cardputer ADV yet**: the frame time, the memory left and the microphone's response are
