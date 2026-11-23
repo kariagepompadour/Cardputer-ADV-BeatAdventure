@@ -28,8 +28,11 @@ static uint16_t* FB = nullptr;           // the frame buffer being drawn into
 static float gAlpha = 1.0f;              // the web demo's globalAlpha: below 1, R() blends
 static bool gMirror = false;             // draw mirrored about x = gMirrorX (the web demo's translate(x, 0); scale(-1, 1); translate(-x, 0))
 static int gMirrorX = 0;
+static bool gRot = false;                // draw rotated (the web demo's translate(ox, oy); rotate(a)): R() fills the rotated rectangle pixel by pixel
+static float gRotCos = 1, gRotSin = 0, gRotX = 0, gRotY = 0;
 
 static inline int rnd(float v) { return (int)floorf(v + 0.5f); }    // JavaScript's Math.round
+static inline float tsin(double x) { return sinf((float)fmod(x, 6.283185307179586)); }   // sin of a time-based phase without losing float precision
 static inline float cl01(float f) { return f < 0 ? 0 : f > 1 ? 1 : f; }
 static inline float sm01(float f) { return f * f * (3 - 2 * f); }
 static inline float lp(float a, float b, float t) { return a + (b - a) * t; }
@@ -38,6 +41,18 @@ static inline float lp(float a, float b, float t) { return a + (b - a) * t; }
 static void fillA(int x, int y, int w, int h, int r, int g, int b, float a);
 static inline void R(float xf, float yf, int w, int h, uint16_t c) {
   int x = rnd(xf), y = rnd(yf);
+  if (gRot) {   // the rectangle in the rotated frame: test each screen pixel of its bounding box
+    const float cx[4] = {(float)x, (float)(x + w), (float)x, (float)(x + w)}, cy[4] = {(float)y, (float)y, (float)(y + h), (float)(y + h)};
+    float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
+    for (int i = 0; i < 4; i++) { float wx = gRotX + gRotCos * cx[i] - gRotSin * cy[i], wy = gRotY + gRotSin * cx[i] + gRotCos * cy[i]; if (wx < mnx) mnx = wx; if (wx > mxx) mxx = wx; if (wy < mny) mny = wy; if (wy > mxy) mxy = wy; }
+    int px0 = (int)floorf(mnx), px1 = (int)ceilf(mxx), py0 = (int)floorf(mny), py1 = (int)ceilf(mxy);
+    if (px0 < 0) px0 = 0; if (py0 < 0) py0 = 0; if (px1 > W) px1 = W; if (py1 > H) py1 = H;
+    for (int py = py0; py < py1; py++) for (int pxl = px0; pxl < px1; pxl++) {
+      float dx = pxl + 0.5f - gRotX, dy = py + 0.5f - gRotY, lx = gRotCos * dx + gRotSin * dy, ly = -gRotSin * dx + gRotCos * dy;
+      if (lx >= x && lx < x + w && ly >= y && ly < y + h) FB[py * W + pxl] = c;
+    }
+    return;
+  }
   if (gMirror) x = 2 * gMirrorX - x - w;
   int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y, x1 = x + w > W ? W : x + w, y1 = y + h > H ? H : y + h;
   if (x1 <= x0 || y1 <= y0) return;   // wholly off the screen

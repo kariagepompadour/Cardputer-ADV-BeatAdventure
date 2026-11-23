@@ -79,7 +79,7 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM };
 static float AIR_U = 0;
 static float SWING_K = 0;   // how far along its arc the vine is, -1..1 (the web demo's S.swK)   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
 
@@ -95,6 +95,28 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawBody(hx, hy, lean); drawLeg(L1, hx, hy, false);
     const float hold = sm01(cl01(u / 0.12f)) * (1 - sm01(cl01((u - 0.9f) / 0.1f)));   // the near hand goes up to hold the fedora in the air and lets go as he lands; the far arm trails behind
     armTo(sx, sy, lp(sx + 3, sx + 2, hold), lp(sy + 7, sy - 4, hold), false);
+    return;
+  }
+  if (mode == HM_SWIM) {   // side view crawl: the arms take turns, bent and lifted out of the water on the recovery, long and pulling underneath; the legs flutter
+    const float p = HC.ph * 0.5f, y = feetY - 7, sx = x + 4, hx = x - 6, k = tsin(now * 13);
+    auto arm = [&](int idx, bool dark) {
+      const float al = 2 * (float)M_PI * (p + idx * 0.5f); const bool up = sinf(al) < 0; const float bend = up ? 1.0f : 0.15f;
+      const float ex = sx + 4 * cosf(al - bend), ey = y + 4 * sinf(al - bend), hx2 = sx + 8 * cosf(al), hy2 = y + 8 * sinf(al) * (up ? 1.0f : 0.7f);
+      seg(sx, y, ex, ey, dark ? P_G_D : P_G, 2); seg(ex, ey, hx2, hy2, dark ? P_S_D : P_S, 2);
+    };
+    arm(1, true);
+    seg(hx, y + 1, hx - 4, y + 1 + k * 2, P_P, 2); seg(hx - 4, y + 1 + k * 2, hx - 9, y + 1 + k * 4, P_P, 2);
+    seg(hx, y + 2, hx - 4, y + 2 - k * 2, P_P_D, 2); seg(hx - 4, y + 2 - k * 2, hx - 9, y + 2 - k * 4, P_P_D, 2);
+    seg(hx, y + 1, sx, y, P_G, 4);
+    R(sx + 1, y - 2, 4, 3, P_S); R(sx + 1, y - 4, 4, 1, P_H); R(sx - 2, y - 3, 10, 1, P_H);
+    arm(0, false);
+    return;
+  }
+  if (mode == HM_PLUNGE) {   // a straight drop: upright (a touch back), both arms thrown up and windmilling backwards over the head, the legs pedalling in the air
+    const double t = now * 9; const float hx = x, hy = feetY - 9, lean = -5 * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+    auto leg = [&](float ph) { return legAF(hx, hy, 14 * tsin(t + ph), 30 + 24 * tsin(t + ph + 1.3)); };
+    auto arm = [&](float ph, bool dark) { const float a = (float)fmod(t * 0.9 + M_PI + ph, 2 * M_PI); armTo(sx, sy, sx + 8 * sinf(a), sy + 8 * cosf(a), dark); };
+    drawLeg(leg((float)M_PI), hx, hy, true); arm((float)M_PI * 0.8f, true); drawBody(hx, hy, lean); drawLeg(leg(0), hx, hy, false); arm(0, false);
     return;
   }
   if (mode == HM_SWING) {   // hanging from the vine with both hands above the head, the body trailing behind going up and swinging ahead coming down, the legs bent and lagging

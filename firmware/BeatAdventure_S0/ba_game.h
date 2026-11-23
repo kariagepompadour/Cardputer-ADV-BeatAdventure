@@ -26,7 +26,6 @@ struct AudioIn {
 constexpr float V = 90.0f;   // scroll px/s
 constexpr int PITCH = 8, SEG = 4, SEG_H = 3;   // the equalizer blocks: 6 px wide (8 px pitch), 3 px tall (4 px pitch)
 
-static inline float tsin(double x) { return sinf((float)fmod(x, 6.283185307179586)); }   // sin of a time-based phase without losing float precision
 
 // ---- Stage 1: the liner.
 constexpr int UPX = 318, UPW = 324, DNX = 436, DNW = 446, CEND = 600, UP_TOP = 88;   // the last rung is at 88: the top of the cliff (100) is reached by pulling up over the edge
@@ -74,7 +73,11 @@ enum { LH_ = 0, RH_ = 1, LF_ = 2, RF_ = 3 };
 constexpr float TARZAN_STEP = 5, TARZAN_TOTAL = TARZAN_STEP * 3;
 struct Vines { float t = 0; };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_COUNT };
+// ---- Stage 6: the boat and the falls (the web demo's "boatfall"): the vines land beside a brook; a moored boat carries him over a waterfall.
+enum BtPh : uint8_t { BT_SHORE, BT_BOARD, BT_CRUISE, BT_LIP, BT_DROP, BT_SPLASH };
+struct Boat { float t = 0; BtPh phase = BT_SHORE; };
+
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_COUNT };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -88,6 +91,7 @@ struct Game {
   Mtn mt;
   Wall wl;
   Vines vn;
+  Boat bt;
 };
 
 static void setScene(Game& G, Scene s, double now) {
@@ -95,6 +99,7 @@ static void setScene(Game& G, Scene s, double now) {
   if (s == SC_LINER) G.cl = Liner();
   if (s == SC_WALL) G.wl = Wall();
   if (s == SC_VINES) G.vn = Vines();
+  if (s == SC_BOAT) G.bt = Boat();
   if (s == SC_BEACH || s == SC_FOREST) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST; }
@@ -287,7 +292,12 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   updateMountains(G, A, now);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
   else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
-  else if (G.scene == SC_VINES) { G.vn.t = fminf(TARZAN_TOTAL, G.vn.t + dt); if (G.vn.t >= TARZAN_TOTAL && !G.fadeDir) switchTo(G, SC_LINER); }   // the boat and the falls come next in the web demo; until they are ported, the story starts again
+  else if (G.scene == SC_BOAT) {
+    Boat& b = G.bt; b.t += dt;
+    b.phase = b.t < 1.6f ? BT_SHORE : b.t < 2.8f ? BT_BOARD : b.t < 8.4f ? BT_CRUISE : b.t < 11 ? BT_LIP : b.t < 13.5f ? BT_DROP : BT_SPLASH;
+    if (b.t >= 15.5f && !G.fadeDir) switchTo(G, SC_LINER);   // the waterfall basin opens into the crocodile river in the web demo; until the river is ported, the story starts again
+  }
+  else if (G.scene == SC_VINES) { G.vn.t = fminf(TARZAN_TOTAL, G.vn.t + dt); if (G.vn.t >= TARZAN_TOTAL && !G.fadeDir) switchTo(G, SC_BOAT); }   // on to the brook and the boat
   else updateBeach(G, A, dt, now);
   if (G.fadeDir) {
     G.fade += G.fadeDir * dt * 1.8f;
@@ -686,6 +696,103 @@ static void drawVines(const Game& G, double now) {   // a sunlit break in the mo
   else { AIR_U = 0; drawHero((float)rnd(handX), handY + 23, now, HM_AIR); }
 }
 
+// ---- The boat and the falls, drawn.
+static void rotOn(float ox, float oy, float a) { gRot = true; gRotX = (float)rnd(ox); gRotY = (float)rnd(oy); gRotCos = cosf(a); gRotSin = sinf(a); }
+static void rotOff() { gRot = false; }
+static void drawSmallBoat(float x, float y, float tilt) {   // wood hull and raised bow, wide enough for one explorer
+  rotOn(x, y, tilt);
+  R(-23, -2, 46, 3, rgb(70, 42, 27)); R(-21, 1, 42, 5, rgb(141, 90, 48));
+  R(-18, 6, 36, 3, rgb(104, 59, 34)); R(-13, 9, 26, 2, rgb(70, 42, 27));
+  R(-22, -5, 4, 7, rgb(116, 68, 36)); R(18, -7, 5, 9, rgb(116, 68, 36));
+  R(-14, -2, 11, 2, rgb(187, 132, 75)); R(6, -2, 10, 2, rgb(187, 132, 75));
+  rotOff();
+}
+static void drawBoatRower(float x, float y, double now) {   // seated low in the hull, rowing with a visible stroke
+  const float stroke = tsin(now * 6), handX = x + 6 + rnd(stroke * 2), handY = y - 12;
+  seg(x, y - 5, x + 5, y - 7, P_P, 2); seg(x + 5, y - 7, x + 9, y - 3, P_P, 2); R(x + 8, y - 4, 4, 2, P_B);
+  seg(x - 1, y - 5, x + 3, y - 8, P_P_D, 2); seg(x + 3, y - 8, x + 7, y - 3, P_P_D, 2);
+  drawBody(x, y - 5, 3 * DEG);   // same torso, head and fedora proportions as the running explorer
+  armTo(x, y - 12, x + 3, y - 9, true);
+  armTo(x + 1, y - 12, handX, handY, false);
+}
+static void drawBoatOar(float x, float y, double now) {
+  const float stroke = tsin(now * 6);
+  seg(x + 6 + rnd(stroke * 2), y - 12, x + 25 + rnd(stroke * 5), y + 9, rgb(112, 70, 40), 2);
+  R(x + 23 + rnd(stroke * 5), y + 7, 8, 2, rgb(174, 125, 74));
+}
+static void drawBoatTumble(float x, float y, double now, float u) {   // head tips forward; arms and legs flail independently
+  rotOn(x, y, lp(0.4f, 1.15f, sm01(cl01(u * 2))) + tsin(now * 15) * 0.14f);
+  drawHero(0, 0, now, HM_PLUNGE);
+  rotOff();
+}
+static void drawBoatfallRidge(const Mtn& m, int endX) {   // recorded volume columns travel left; each mountain height stays fixed after entering
+  for (int x = 0; x < endX; x += 4) {
+    int i = (W - m.farOff - x) / PITCH; int h = 10 + 3 * ((i >= 0 && i < 34) ? m.far[i] : 0); int w = endX - x < 4 ? endX - x : 4;
+    R(x, 74 - h, w, h, rgb(31, 105, 93)); R(x, 74 - h, w, 2, rgb(91, 173, 162));
+  }
+}
+static void drawBoatfallSurf(const AudioIn& A, int endX, double now) {   // pale blue and white EQ in the lower part of the stream
+  for (int j = 0; j < 30 && j * PITCH < endX; j++) {
+    int x = j * PITCH + 1, n = rnd(A.eqH[j] + 0.5f + 0.6f * tsin(now * 3 + j * 0.7)); n = n < 1 ? 1 : n > 5 ? 5 : n;
+    for (int k = 0; k < n; k++) { int y = 114 - 4 * (k + 1); int w = endX - x < 6 ? endX - x : 6; R(x, y, w, 3, SURF_EQ[5 - k]); }
+    if (n > 2) { int w = endX - x - 1 < 4 ? endX - x - 1 : 4; R(x + 1, 112 - 4 * n, w, 1, rgb(245, 253, 255)); }
+  }
+}
+static void drawBoatfallCascade(float lipX, float topY, double now) {   // the stream keeps its forward motion as it pours over the edge
+  const int fallSpeed = (int)floor(now * 48);
+  for (int y = (int)floorf(topY); y < H; y += 2) {
+    float d = y - topY; int bend = rnd(0.35f * d - 0.0006f * d * d); float x = lipX + bend;
+    R(x, y, 16, 2, rgb(34, 134, 197)); R(x + 2, y, 8, 2, rgb(113, 210, 239));
+    if (((y + fallSpeed) % 13 + 13) % 13 < 3) R(x + 1, y, 4, 2, rgb(238, 250, 255));
+    if (((y + fallSpeed + 6) % 17 + 17) % 17 < 3) R(x + 13, y, 3, 2, rgb(214, 244, 255));
+    if (d > 20 && y % 9 < 2) R(x + 18 + (int)d % 5, y - 1, 2, 2, rgb(187, 234, 249));
+  }
+}
+static void drawBoatfall(const Game& G, const AudioIn& A, double now) {   // vines land beside a brook; a moored boat carries him over a waterfall
+  const float t = G.bt.t; const BtPh phase = G.bt.phase; const Mtn& m = G.mt;
+  const uint16_t WATER = rgb(26, 104, 174), DEEP = rgb(13, 65, 136), FOAM = rgb(226, 250, 255), TRUNK = rgb(80, 50, 24), LEAF = rgb(10, 90, 30), LEAF2 = rgb(20, 130, 40);
+  HC.slope = 0; HC.wob = 0;
+  if (phase == BT_DROP) {
+    const float u = cl01((t - 11) / 2.5f); const int rush = rnd(u * 210), cliffTop = 74 - rush;
+    R(0, 0, W, H, rgb(105, 184, 220));
+    R(0, cliffTop > 0 ? cliffTop : 0, 105, H, rgb(110, 80, 55));
+    for (int row = -1; row < 14; row++) { int y = (((row * 15 - rush) % 165) + 165) % 165 - 15; R(4, y + 4, 31, 2, rgb(151, 121, 82)); R(55, y + 10, 40, 2, rgb(74, 63, 51)); }
+    if (cliffTop > 0) { R(0, cliffTop - 5, 105, 5, WATER); R(0, cliffTop - 1, 105, 2, FOAM); }
+    drawBoatfallCascade(105, (float)(cliffTop - 5), now);
+    if (u > 0.64f) { int poolY = rnd(137 - 29 * sm01(cl01((u - 0.64f) / 0.36f))); R(0, poolY, W, H - poolY, DEEP); R(0, poolY, W, 3, FOAM); }
+    const int boatY = rnd(78 + 57 * sm01(cl01(u * 1.18f))), heroY = rnd(67 + 51 * sm01(cl01((u - 0.08f) / 0.92f)));
+    drawSmallBoat((float)(117 + rnd(9 * u)), (float)boatY, u * 0.55f);
+    drawBoatTumble((float)(107 + rnd(14 * u)), (float)heroY, now, u);
+    return;
+  }
+  if (phase == BT_SPLASH) {
+    const float u = cl01((t - 13.5f) / 2); const int hx = rnd(lp(100, HX, u));
+    R(0, 0, W, 42, rgb(73, 150, 197)); R(0, 42, W, H - 42, WATER); R(0, 92, W, H - 92, DEEP);
+    for (int i = 0; i < 30; i++) { int x = i * 11 - 8, y = 41 + rnd(tsin(i * 0.7 - now * 5) * 2); R(x, y, 8, 2, FOAM); }
+    drawSmallBoat((float)(150 + rnd(75 * u)), (float)(78 + rnd(3 * tsin(now * 4))), 0.2f);
+    for (int i = 0; i < 14; i++) { int x = 95 + ((i * 19) % 40) - rnd(9 * u), y = 40 + ((i * 13) % 48) - rnd(15 * u); R(x, y, 2, 3, i % 2 ? FOAM : rgb(139, 217, 248)); }
+    drawHero((float)hx, 91, now, HM_SWIM); return;
+  }
+  const bool moving = phase == BT_CRUISE || phase == BT_LIP; const float off = moving ? (t - 2.8f) * 21 : 0;
+  R(0, 0, W, H, rgb(105, 184, 220)); R(0, 0, W, 27, rgb(68, 145, 205));
+  const int lipX = phase == BT_LIP ? rnd(260 - (t - 8.4f) * 62) : W + 20, bankEnd = lipX < W ? lipX : W;
+  drawBoatfallRidge(m, bankEnd);
+  for (int i = -1; i < 7; i++) { int x = (int)(fmodf(fmodf(i * 48 - off * 0.7f, 335) + 335, 335)) - 35; R(x, 25, 5, 51, TRUNK); R(x - 10, 21, 27, 8, LEAF); R(x - 5, 17, 18, 5, LEAF2); }
+  if (lipX < W) R(lipX, 27, W - lipX, 51, rgb(105, 184, 220));   // open air beyond the last bank
+  R(0, 74, bankEnd, H - 74, WATER); R(0, 93, bankEnd, H - 93, DEEP);
+  for (int i = 0; i < 16; i++) { int x = (int)(fmodf(fmodf(i * 27 - off * 1.3f, 300) + 300, 300)) - 20; if (x + 8 < lipX) R(x, 75 + (i % 4) * 8, 8, 1, rgb(151, 220, 246)); }
+  R(0, 115, bankEnd, H - 115, rgb(110, 80, 55)); R(0, 115, bankEnd, 3, rgb(71, 83, 55));
+  drawBoatfallSurf(A, bankEnd, now);
+  if (lipX < W) { R(lipX - 3, 73, 6, 6, FOAM); drawBoatfallCascade((float)lipX, 78, now); }
+  if (!moving) { R(0, 87, 68, H - 87, rgb(110, 70, 30)); R(0, 85, 68, 3, rgb(40, 170, 50)); }
+  const int bob = rnd(tsin(now * 4) * (1 + A.level * 2));
+  if (moving) drawBoatRower(100, (float)(77 + bob), now);
+  drawSmallBoat(102, (float)(77 + bob), phase == BT_LIP ? 0.04f * (t - 8.4f) : 0.0f);
+  if (moving) drawBoatOar(100, (float)(77 + bob), now);
+  if (phase == BT_SHORE) drawHero((float)rnd(lp(15, 70, cl01(t / 1.6f))), 85, now, HM_RUN);
+  else if (phase == BT_BOARD) { const float u = sm01(cl01((t - 1.6f) / 1.2f)); AIR_U = 0; drawHero((float)rnd(lp(70, 102, u)), (float)rnd(lp(85, 76 + bob, u) - 10 * sinf((float)M_PI * u)), now, HM_AIR); }
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -717,8 +824,9 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
-  float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * 0.45f;   // the quieter it gets, the darker (less so at sea)
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
+  const float kScene = (G.scene == SC_LINER || G.scene == SC_BEACH) ? 0.45f : G.scene == SC_BOAT ? 0.0f : 1.0f;   // the web demo: less dark at sea and on the beach, none on the brook
+  float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * kScene;   // the quieter it gets, the darker
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
   if (G.visualDark > 0) fillA(0, 0, W, H, 0, 0, 12, G.visualDark);
   if (G.fade > 0) fillA(0, 0, W, H, 0, 0, 0, G.fade < 1 ? G.fade : 1);
@@ -726,6 +834,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : "LINER"; }
 
 }  // namespace beatadv
