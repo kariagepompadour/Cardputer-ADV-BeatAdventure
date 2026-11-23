@@ -58,7 +58,19 @@ struct Beach {
 // The far mountains and the canopy: a picture of the last few seconds of volume, as in KeySpeaker (the web demo's M.far, M.canopy).
 struct Mtn { uint8_t far[34] = {}; int canopy[34]; int canopyNext = 10; double farT = 0; float farAcc = 0; int farN = 0, farOff = 0; float avg = -30; bool set = false; Mtn() { for (int i = 0; i < 34; i++) canopy[i] = 10; } };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST };
+// ---- Stage 4: the wall (the web demo's "wall"): a landslide blocks the trail; he climbs the rock face hand and foot in turn, one grip on every beat.
+enum WlPh : uint8_t { WP_APPROACH, WP_PAUSE, WP_UP, WP_TOP, WP_EXIT };
+constexpr int WALL_STEPS = 52, WALL_HEIGHT = WALL_STEPS * 3;   // high enough that the forest floor disappears before the vine-ravine ledge
+struct Limb4 { float x, h, from, tgt, t; };
+struct Wall {
+  int steps = 0; WlPh phase = WP_APPROACH; float tt = 0, stepT = 0, x = -12, z = 0, dodge = 0, grip = 0;
+  struct { bool live = false, pass = false; float x = 0, t = 0; } condor; int nextCondor = 0;
+  struct Rk { bool live = false; float t = 0, x = 0, y = 0; } rocks[3]; int nextRock = 0;
+  Limb4 L[4] = {{-7, 15, 15, 15, 1}, {7, 9, 9, 9, 1}, {-4, -10, -10, -10, 1}, {4, -4, -4, -4, 1}};   // LH, RH, LF, RF
+};
+enum { LH_ = 0, RH_ = 1, LF_ = 2, RF_ = 3 };
+
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -70,11 +82,13 @@ struct Game {
   Liner cl;
   Beach bc;
   Mtn mt;
+  Wall wl;
 };
 
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
   if (s == SC_LINER) G.cl = Liner();
+  if (s == SC_WALL) G.wl = Wall();
   if (s == SC_BEACH || s == SC_FOREST) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST; }
@@ -211,7 +225,41 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
     for (Obs& o : b.obs) if (o.live && !o.done) { float t = obsTtl(b, o); if (t < JD / 2 && t > -0.1f) { b.jd = JD; b.jh = JH; b.jump = fmaxf(0, b.jd / 2 - t); o.done = true; break; } }
   }
   if (!b.forest && !G.fadeDir && now - b.shipStart >= 48) switchTo(G, SC_FOREST);   // the liner disappears at the horizon, and the beach gives way to forest
-  if (b.forest && !G.fadeDir && !G.hide && now - G.t0 >= 55) switchTo(G, SC_LINER);   // the wall comes next in the web demo; until it is ported, the story starts again
+  if (b.forest && !G.fadeDir && !G.hide && now - G.t0 >= 55) switchTo(G, SC_WALL);   // the trail ends at a landslide
+}
+
+static void updateWall(Game& G, const AudioIn& A, float dt, double now) {
+  Wall& c = G.wl; const int ORDER[4] = {RH_, LF_, LH_, RF_};
+  c.tt += dt; c.stepT += dt; c.dodge = fmaxf(0.0f, c.dodge - dt); c.grip = fmaxf(0.0f, c.grip - dt);
+  if (c.phase == WP_APPROACH) { c.x = fminf(91.0f, c.x + V * G.sp * dt); if (c.x >= 91) { c.phase = WP_PAUSE; c.tt = 0; } }
+  else if (c.phase == WP_PAUSE) { if (c.tt >= 0.75f) { c.phase = WP_UP; c.tt = 0; c.stepT = 0; } }
+  else if (c.phase == WP_UP || c.phase == WP_TOP) {
+    for (Limb4& l : c.L) if (l.t < 1) { l.t = fminf(1.0f, l.t + dt / (0.55f * A.T)); l.h = lp(l.from, l.tgt, sm01(l.t)); }
+    if (c.phase == WP_UP) {
+      static const int ROCK_AT[3] = {8, 24, 39}, ROCK_X[3] = {197, 174, 190}, CONDOR_AT[3] = {10, 27, 42};
+      if (c.nextRock < 3 && c.steps >= ROCK_AT[c.nextRock]) {   // a stone comes down the face
+        for (Wall::Rk& r : c.rocks) if (!r.live) { r.live = true; r.t = 0; r.x = (float)ROCK_X[c.nextRock]; r.y = fmaxf(28.0f, 98 + fmaxf(0.0f, c.z - 22) - WALL_HEIGHT + 15); break; }
+        c.nextRock++;
+      }
+      for (Wall::Rk& r : c.rocks) if (r.live) { r.t += dt; if (r.t >= 2.3f) r.live = false; }
+      if (!c.condor.live && c.nextCondor < 3 && c.steps >= CONDOR_AT[c.nextCondor]) { c.condor.live = true; c.condor.x = W + 20; c.condor.pass = false; c.condor.t = 0; }
+      if (c.condor.live) {
+        c.condor.x -= 100 * dt; c.condor.t += dt;
+        if (!c.condor.pass && c.condor.x <= 111) { c.condor.pass = true; c.dodge = 0.85f; c.grip = 0.65f; c.stepT = 0; c.nextCondor++; }   // he ducks and holds on
+        if (c.condor.x < -25) c.condor.live = false;
+      }
+      if (c.grip <= 0 && ((A.beatNow && !G.isQuiet) || c.stepT >= (G.isQuiet ? 1.15f : A.sounding ? 1.4f : 0.8f))) {
+        c.stepT = 0; Limb4& l = c.L[ORDER[c.steps % 4]]; l.from = l.h; l.tgt = l.h + 12; l.t = 0; c.steps++;
+        if (c.steps >= WALL_STEPS) { c.phase = WP_TOP; c.tt = 0; }
+      }
+    } else if (c.tt >= 1.2f) { c.phase = WP_EXIT; c.tt = 0; c.x = 100; }
+  } else if (c.phase == WP_EXIT) {
+    c.x += V * G.sp * dt;
+    if (c.x >= W + 12 && !G.fadeDir) switchTo(G, SC_LINER);   // the vine ravine comes next in the web demo; until it is ported, the story starts again
+  }
+  c.z = (c.L[LH_].h + c.L[RH_].h + c.L[LF_].h + c.L[RF_].h) / 4 - 2.5f;
+  if (c.phase == WP_UP) c.x = 91;
+  (void)now;
 }
 
 // One frame of the game: the quiet detector, the sneak, the stride, then the stage and the fade between stages.
@@ -232,6 +280,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   HC.ph -= floorf(HC.ph);
   updateMountains(G, A, now);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
+  else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
   else updateBeach(G, A, dt, now);
   if (G.fadeDir) {
     G.fade += G.fadeDir * dt * 1.8f;
@@ -512,6 +561,96 @@ static void drawForestBack(const Game& G, const AudioIn& A, double now) {
   for (int x = 0; x < W; x += 4) { int y = GY - ghr(b, sc + x - HX); Ri(x, y + 4, 4, H - y - 4, rgb(110, 70, 30)); Ri(x, y + 14, 4, 12, rgb(70, 44, 20)); Ri(x, y, 4, 4, rgb(40, 170, 50)); }   // the ground is the volume
 }
 
+// ---- The wall, drawn.
+static void drawCondor(float x, float y, double now) {   // broad dark wings, hooked beak and pale neck; a low pass at the climber
+  const int flap = rnd(5 * tsin(now * 15));
+  seg(x - 3, y, x - 18, y - 5 + flap, rgb(56, 47, 44), 4); seg(x + 3, y, x + 18, y - 5 + flap, rgb(56, 47, 44), 4);
+  for (int i = 0; i < 3; i++) { R(x - 18 + i * 3, y - 5 + flap + i, 2, 4, rgb(44, 39, 39)); R(x + 12 + i * 3, y - 3 + flap - i, 2, 4, rgb(44, 39, 39)); }
+  R(x - 5, y - 2, 11, 6, rgb(69, 54, 48)); R(x - 6, y - 2, 4, 4, rgb(211, 191, 160));
+  R(x - 8, y - 3, 3, 4, rgb(151, 68, 55)); R(x - 10, y, 3, 2, rgb(225, 181, 69)); R(x - 8, y - 2, 1, 1, rgb(15, 13, 13));
+  R(x + 5, y + 2, 7, 2, rgb(46, 38, 36));
+}
+static void drawWallRock(float x, float y) {
+  R(x - 5, y - 2, 10, 6, rgb(66, 62, 57)); R(x - 4, y - 5, 8, 3, rgb(84, 79, 69));
+  R(x - 2, y - 6, 4, 2, rgb(119, 111, 91)); R(x - 4, y - 2, 3, 2, rgb(145, 134, 108));
+  R(x + 3, y + 2, 3, 2, rgb(43, 42, 40));
+}
+static void wallRockPos(const Wall::Rk& r, int& px, int& py) {   // three contacts with the cliff face reverse the falling stone's horizontal course
+  const float keys[5][3] = {{0, r.x, -9}, {0.55f, r.x - 24, r.y}, {1.02f, r.x + 8, r.y + 25}, {1.52f, r.x - 20, r.y + 49}, {2.3f, r.x + 12, H + 20}};
+  for (int i = 1; i < 5; i++) if (r.t <= keys[i][0]) {
+    const float* a = keys[i - 1]; const float* b = keys[i]; float t = (r.t - a[0]) / (b[0] - a[0]);
+    px = rnd(lp(a[1], b[1], t)); py = rnd(lp(a[2], b[2], t)); return;
+  }
+  px = (int)(r.x + 12); py = H + 20;
+}
+static void drawWallRear(const Game& G, const AudioIn& A, double now) {   // after the first grips, look over his shoulder straight at the rock face
+  const Wall& c = G.wl; const Mtn& m = G.mt;
+  const float camera = fmaxf(0.0f, c.z - 22), groundY = 98 + camera, crestY = groundY - WALL_HEIGHT; const int bx = 120;
+  R(0, 0, W, H, rgb(106, 177, 211)); R(0, 0, W, 30, rgb(69, 144, 202));
+  if (crestY > 0) for (int x = 0; x < W; x += 8) { int i = (W - x) / PITCH; int h = 10 + 3 * (i < 34 ? m.far[i] : 0); R(x, crestY - h, 8, h, rgb(42, 102, 87)); }
+  const float top = fmaxf(0.0f, crestY); const uint16_t stone = rgb(111, 75, 43), shadeStone = rgb(79, 58, 39);
+  R(8, top, 224, H - top, stone); R(8, top, 10, H - top, shadeStone); R(222, top, 10, H - top, shadeStone);
+  if (crestY > -3) { R(8, crestY, 224, 3, rgb(144, 110, 72)); R(8, crestY - 3, 224, 3, rgb(40, 170, 50)); }
+  for (int i = 0; i < 100; i++) { int x = 19 + (i * 47) % 198; float y = crestY + 8 + (i * 31) % (WALL_HEIGHT + 40);
+    if (y < top + 3 || y > H - 3) continue;
+    R(x, y, 5 + i % 4, 2 + i % 2, i % 3 ? rgb(136, 119, 94) : rgb(92, 83, 70));
+    if (i % 4 == 0) R(x + 1, y, 3, 1, rgb(174, 153, 119)); }
+  auto posX = [&](int k) { return (float)(bx + c.L[k].x); }; auto posY = [&](int k) { return (float)rnd(groundY - c.L[k].h); };
+  if (c.phase == WP_UP) for (int k = 0; k < 4; k++) { float px = posX(k), py = posY(k); R(px - 3, py + 1, 8, 3, shadeStone); R(px - 3, py, 8, 1, rgb(166, 143, 108)); }
+  if (c.phase == WP_UP) for (const Wall::Rk& r : c.rocks) if (r.live) {
+    const float lx[3] = {r.x - 24, r.x + 8, r.x - 20}, ly[3] = {r.y, r.y + 25, r.y + 49};
+    for (int i = 0; i < 3; i++) if (ly[i] > top + 3 && ly[i] < H) { R(lx[i] - 6, ly[i] + 4, 13, 3, shadeStone); R(lx[i] - 4, ly[i] + 3, 9, 1, rgb(171, 148, 112)); }
+    int px, py; wallRockPos(r, px, py); if (py > -8 && py < H + 6) drawWallRock((float)px, (float)py);
+    static const float HITS[3] = {0.55f, 1.02f, 1.52f};
+    for (float hit : HITS) if (fabsf(r.t - hit) < 0.12f) { R(px - 9, py - 5, 2, 2, rgb(174, 155, 121)); R(px + 7, py - 8, 2, 2, rgb(174, 155, 121)); }
+  }
+  const float hipY = (float)rnd(groundY - c.z), sy = hipY - 7;
+  const float lfx = posX(LF_), lfy = posY(LF_), rfx = posX(RF_), rfy = posY(RF_), lhx = posX(LH_), lhy = posY(LH_), rhx = posX(RH_), rhy = posY(RH_);
+  if (c.condor.live) drawCondor((float)rnd(c.condor.x), hipY - 27 + rnd(8 * cl01((W - c.condor.x) / 130)), now);
+  legTo(bx - 2, hipY + 1, lfx, lfy, true, -1);
+  legTo(bx + 2, hipY + 1, rfx, rfy, false, 1);
+  R(bx - 3, hipY - 1, 6, 4, P_P); R(bx - 3, sy - 1, 6, 8, P_G);
+  R(bx, sy, 1, 6, px565(shadeC(C_G, 0.7f))); R(bx - 3, hipY - 1, 6, 1, P_B);   // jacket seam identifies the rear view
+  armTo(bx - 3, sy, lhx, lhy, true, -1);
+  if (c.dodge > 0) { armTo(bx + 3, sy, bx + 2, sy - 7, false, 1); R(bx - 4, sy - 7, 9, 2, P_H); }
+  else armTo(bx + 3, sy, rhx, rhy, false, 1);
+  R(bx - 2, sy - 4, 5, 3, P_K); R(bx - 5, sy - 5, 11, 1, P_H); R(bx - 2, sy - 6, 5, 1, P_H);   // hair, hat and no face
+  (void)A;
+}
+static void drawWall(const Game& G, const AudioIn& A, double now) {   // the landslide blocks the trail; the camera follows a long vertical climb until the ground vanishes
+  const Wall& c = G.wl;
+  const float camera = fmaxf(0.0f, c.z - 22), groundY = 98 + camera, crestY = groundY - WALL_HEIGHT; const int toeX = 96;
+  if (c.phase == WP_TOP || (c.phase == WP_UP && c.steps >= 2)) { drawWallRear(G, A, now); return; }
+  static const int WOB[6] = {0, -1, 1, 0, -2, 1};
+  auto slopeY = [&](float x) { float d = fmaxf(0.0f, x - toeX); return crestY - rnd(fminf(30.0f, d * 0.25f)) + WOB[(int)floorf(d / 6) % 6]; };
+  const uint16_t DIRT = rgb(110, 70, 30), DIRT2 = rgb(70, 44, 20), GRASS = rgb(40, 170, 50), TRUNK = rgb(80, 50, 24), LEAF = rgb(10, 90, 30), LEAF2 = rgb(20, 130, 40);
+  R(0, 0, W, H, rgb(106, 177, 211)); R(0, 0, W, 30, rgb(69, 144, 202));
+  for (int i = 0; i < 4; i++) { int x = 14 + i * 61, y = 20 + i * 6; R(x, y, 20, 3, rgb(216, 240, 237)); R(x + 5, y - 2, 12, 2, rgb(216, 240, 237)); }
+  for (int x = 0; x < W; x += 4) { float y = 74 + camera + rnd(7 * sinf(x * 0.045f)); if (y < H) R(x, y, 4, H - y, rgb(42, 102, 87)); }
+  if (groundY < H) { R(0, groundY, toeX, H - groundY, DIRT); R(0, groundY, toeX, 3, GRASS); R(0, groundY + 13, toeX, 7, DIRT2); }
+  static const int JAG[8] = {0, -3, 2, -2, 3, -4, 1, -1};
+  for (int y = (int)fmaxf(0.0f, floorf((crestY - 32) / 3) * 3); y < H; y += 3) {
+    int row = (int)floorf((y - crestY) / 8), jag = JAG[((row % 8) + 8) % 8];
+    int slopeStart = y < crestY ? toeX + (int)ceilf((crestY - y) * 4) : toeX - 4;
+    int x0 = (y >= groundY ? toeX - 4 : toeX + jag); if (slopeStart > x0) x0 = slopeStart; if (x0 < 0) x0 = 0;
+    if (x0 < W) R(x0, y, W - x0, 3, y > groundY + 12 ? DIRT2 : DIRT);
+  }
+  for (int x = toeX; x < W; x += 4) R(x, slopeY((float)x), 4, 2, rgb(146, 112, 77));
+  for (int i = 0; c.phase != WP_EXIT && i < 90; i++) { int x = toeX + ((i * 29) % 150); float y = slopeY((float)x) + 5 + ((i * 37) % (WALL_HEIGHT + 24));
+    if (y > -9 && y < H - 3) { int w = 5 + i % 5, h = 3 + i % 4; R(x, y, w, h, i % 3 ? rgb(105, 99, 86) : rgb(129, 119, 98)); R(x + 1, y, w - 3 > 2 ? w - 3 : 2, 1, rgb(170, 158, 128)); } }
+  if (groundY < H + 12) for (int i = 0; i < 13; i++) { int x = toeX - 19 + i * 7; float y = groundY - 2 - ((i * 7) % 8); R(x, y, 5 + i % 3, 4 + i % 3, i % 2 ? rgb(121, 108, 86) : rgb(88, 82, 69)); }
+  const float treeTop = groundY - 90; if (treeTop < H) { R(70, treeTop, 6, 90, TRUNK); R(74, treeTop, 2, 90, DIRT2);
+    for (int i = 0; i < 6; i++) { int x = 52 + i * 7; float y = treeTop + 3 + i % 2 * 3; R(x, y, 16, 8, LEAF); R(x + 3, y - 3, 9, 3, LEAF2); } }
+  R(115, slopeY(115) + 8, 3, 16, TRUNK); R(117, slopeY(115) + 8, 7, 2, TRUNK);
+  for (int i = 0; i < 5; i++) { int x = 116 + i * 24; float y = slopeY((float)x) - 5; R(x, y, 10, 5, LEAF); R(x + 3, y - 3, 6, 3, LEAF2); }
+  if (c.condor.live) { const float heroY = groundY - c.z, dive = cl01((W + 20 - c.condor.x) / (W - 92));
+    drawCondor((float)rnd(c.condor.x), (float)rnd(heroY - 26 + 20 * dive - 8 * cl01((111 - c.condor.x) / 70)), now); }
+  HC.slope = 0; HC.wob = 0;
+  if (c.phase == WP_APPROACH || c.phase == WP_PAUSE) { drawHero((float)rnd(c.x), groundY, now, c.phase == WP_APPROACH ? HM_RUN : HM_IDLE); return; }
+  if (c.phase == WP_EXIT) { drawHero((float)rnd(c.x), slopeY(c.x), now, HM_RUN); return; }
+  drawLadderHero(91, 40 + c.z, 1);   // body stays outside the wall; hands meet the rock at x=96
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -543,7 +682,7 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  if (G.scene == SC_LINER) drawLiner(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
   float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * 0.45f;   // the quieter it gets, the darker (less so at sea)
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
   if (G.visualDark > 0) fillA(0, 0, W, H, 0, 0, 12, G.visualDark);
@@ -552,6 +691,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : "LINER"; }
 
 }  // namespace beatadv
