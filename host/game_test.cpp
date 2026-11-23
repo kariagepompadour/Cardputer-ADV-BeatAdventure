@@ -24,6 +24,15 @@ int main() {
     printf("%s  treasure: mask taken %d, left the forest %d (at %.0f s)\n", ok ? "ok  " : "FAIL", relics, (int)left, t);
     if (!ok) bad++;
   }
+  {   // the tunnel: a hole down, a ladder up, then the golden doorway (not before about 86 s); then he leaves the tunnel
+    Game G; gameInit(G, 0); setScene(G, SC_CAVE, 0);
+    static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
+    double t = 0; const float dt = 1.0f / 30; int maxDepth = 0, gate = 0; double leftAt = 0;
+    for (int f = 0; f < 30 * 140; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); if (G.scene != SC_CAVE) { leftAt = t; break; } if (G.cv.depth > maxDepth) maxDepth = G.cv.depth; if (G.cv.mv.live && G.cv.mv.kind == MV_GATE) gate++; }
+    const bool ok = maxDepth == 1 && gate > 0 && leftAt >= 86;
+    printf("%s  tunnel: deepest level %d, doorway reached %d, left at %.0f s\n", ok ? "ok  " : "FAIL", maxDepth, gate > 0, leftAt);
+    if (!ok) bad++;
+  }
   if (bad) return 1;
   printf("game rules passed\n");
   return 0;

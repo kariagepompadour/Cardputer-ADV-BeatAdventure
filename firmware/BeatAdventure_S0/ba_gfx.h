@@ -28,6 +28,7 @@ static uint16_t* FB = nullptr;           // the frame buffer being drawn into
 static float gAlpha = 1.0f;              // the web demo's globalAlpha: below 1, R() blends
 static bool gMirror = false;             // draw mirrored about x = gMirrorX (the web demo's translate(x, 0); scale(-1, 1); translate(-x, 0))
 static int gMirrorX = 0;
+static int gOffY = 0;                    // draw everything this many rows lower (the web demo's translate(0, dy): the tunnel sliding past)
 static int gClipB = H;                   // draw nothing below this row (the web demo's clip(): a crocodile's head is cut off by the water)
 static bool gRot = false;                // draw rotated (the web demo's translate(ox, oy); rotate(a)): R() fills the rotated rectangle pixel by pixel
 static float gRotCos = 1, gRotSin = 0, gRotX = 0, gRotY = 0;
@@ -41,7 +42,7 @@ static inline float lp(float a, float b, float t) { return a + (b - a) * t; }
 // A filled rectangle at (x, y) rounded, w x h, clipped to the screen.
 static void fillA(int x, int y, int w, int h, int r, int g, int b, float a);
 static inline void R(float xf, float yf, int w, int h, uint16_t c) {
-  int x = rnd(xf), y = rnd(yf);
+  int x = rnd(xf), y = rnd(yf) + gOffY;
   if (gRot) {   // the rectangle in the rotated frame: test each screen pixel of its bounding box
     const float cx[4] = {(float)x, (float)(x + w), (float)x, (float)(x + w)}, cy[4] = {(float)y, (float)y, (float)(y + h), (float)(y + h)};
     float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
