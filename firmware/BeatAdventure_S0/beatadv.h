@@ -337,6 +337,12 @@ static void update(State& s, uint32_t nowMs, const int16_t* ring, uint32_t mask,
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Drawing: the game's picture into the frame buffer (byte-swapped RGB565, as in M5Canvas's buffer).
+// Development aid: jump to the next or the previous stage at once (n / p while the numbers are shown), so that a stage can be reached without playing the ones before it.
+static void jumpStage(State& s, int delta, uint32_t nowMs) {
+  int n = ((int)s.game.scene + delta + SC_COUNT) % SC_COUNT;
+  s.game.fadeDir = 0; s.game.fade = 0; s.game.hide = false; s.game.quietT = 0;
+  setScene(s.game, (Scene)n, nowMs / 1000.0);
+}
 static void render(State& s, uint16_t* fb, uint32_t nowMs) {
   gameRender(s.game, audioIn(s), fb, nowMs / 1000.0);
 }

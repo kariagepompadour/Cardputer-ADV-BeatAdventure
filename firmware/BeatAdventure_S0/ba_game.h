@@ -70,7 +70,7 @@ struct Wall {
 };
 enum { LH_ = 0, RH_ = 1, LF_ = 2, RF_ = 3 };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL };
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_COUNT };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;

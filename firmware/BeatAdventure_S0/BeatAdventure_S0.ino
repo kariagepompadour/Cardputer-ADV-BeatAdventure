@@ -49,9 +49,9 @@
 #define KS_DIAG 0  // (MP3 stage 0) 1: heap / task diagnostics on the serial port (KsDiag.h), nothing else changes
 #if KS_DIAG
 #include "KsDiag.h"
-#define BUILD_TAG "B7+D"
+#define BUILD_TAG "B7a+D"
 #else
-#define BUILD_TAG "B7"
+#define BUILD_TAG "B7a"
 #endif
 
 #if !defined(ARDUINO_USB_MODE) || ARDUINO_USB_MODE != 0
@@ -1605,6 +1605,10 @@ static void keyService() {
       case 'd':   // (B1d) on the game screen: show or hide the numbers (fps, analysis and drawing times, beats a second, PULSE / onset)
         showDiag = !showDiag;
         acted = true;
+        break;
+      case 'n':   // (B7) development aid: with the numbers shown (d), jump to the next stage; p goes back
+      case 'p':
+        if (mode == MODE_GAME && showDiag) { beatadv::jumpStage(viz, c == 'n' ? 1 : -1, (uint32_t)millis()); acted = true; }
         break;
       case 'v':
         setMode(splashOn || mode == MODE_GAME ? MODE_DATA : MODE_GAME);
