@@ -36,14 +36,16 @@ struct Liner { float w = 0, z = 40, zT = 40, stepT = 0, mt = 0, q = 0; ClPh ph =
 
 // ---- Stage 2: the beach (the web demo's "jungle" with land = "open"): sand road, the liner leaving, driftwood logs and sea turtles to jump.
 constexpr float JD = 0.62f, JH = 28.0f;   // the jump's time and height
-enum ObKind : uint8_t { OB_LOG, OB_TURTLE, OB_NUT, OB_TIGER, OB_BEAR };
-struct Obs { double arr = 0, born = 0; float wx = 0, Tf = 0.7f, xw0 = 0, y0 = 0; ObKind kind = OB_LOG; bool done = false, live = false; };
+enum ObKind : uint8_t { OB_LOG, OB_TURTLE, OB_NUT, OB_TIGER, OB_BEAR, OB_POND };
+struct Obs { double arr = 0, born = 0; float wx = 0, Tf = 0.7f, xw0 = 0, y0 = 0, hw = 14; ObKind kind = OB_LOG; bool done = false, live = false, wide = false, pulse = false, hasCroc = false; };
 struct Hunter { float t = 0; bool live = false, front = false, dodged = false; };   // a masked spear-carrier that appears ahead or behind, then loses the faster, leaping hero
 struct Bat { float x = 0, y = 0, y0 = 0, t = 0; bool live = false; };   // the bat of every old game
 struct Tree { float wx = 0; int throws = 0; double throwAt = -9; bool live = false; };   // a palm with a monkey on it
 struct Beach {
   float scroll = 0, jump = -1, jd = JD, jh = JH;
   Obs obs[6];
+  bool hills = false;                   // the first forest has hills; the second is flat, with ponds
+  struct { bool live = false; int o = 0; float pt = 0; } swing;   // a vine over a wide pond: he jumps up to it, swings across and lets go on the far side
   bool forest = false;                  // the forest (the web demo's land = "forest", hills): the ground is the volume
   int8_t tr[128] = {}; int trN = 0, trPrev = 0;   // the terrain: block heights per column, the newest 80 kept
   int apples[24] = {}; int nApples = 0;           // trunks whose apple has been taken
@@ -88,7 +90,7 @@ struct River {
   double lastArr = 0, nextGap = 0.78, nextLife = 2;
 };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_COUNT };
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_COUNT };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -113,9 +115,9 @@ static void setScene(Game& G, Scene s, double now) {
   if (s == SC_VINES) G.vn = Vines();
   if (s == SC_BOAT) G.bt = Boat();
   if (s == SC_RIVER) { uint32_t r = G.bc.rng; G.rv = River(); G.bc.rng = r; G.rv.lastArr = now; G.rv.nextLife = now + 2; }
-  if (s == SC_BEACH || s == SC_FOREST) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
+  if (s == SC_BEACH || s == SC_FOREST || s == SC_FOREST3) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s != SC_BEACH); G.bc.hills = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
-static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST; }
+static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST || G.scene == SC_FOREST3; }
 static void switchTo(Game& G, Scene s) { if (G.fadeDir) return; G.next = s; G.fadeDir = 1; G.fade = 0; }
 static void gameInit(Game& G, double now) { G = Game(); HC = HeroCtx(); setScene(G, SC_LINER, now); }
 
@@ -180,7 +182,7 @@ static void updateMountains(Game& G, const AudioIn& A, double now) {   // the we
 }
 static inline int trAt(const Beach& b, int i) { return (i >= b.trN || i < b.trN - 80) ? 0 : b.tr[i & 127]; }
 static float gh(const Beach& b, float w) {   // the height (px) of the ground at world x: the block terrain, joined by slopes between the column centres so that he can walk it
-  if (!b.forest) return 0;
+  if (!b.forest || !b.hills) return 0;
   float f = (w - 3) / PITCH; int i = (int)floorf(f); return lp((float)trAt(b, i), (float)trAt(b, i + 1), f - i) * SEG;
 }
 static inline int ghr(const Beach& b, float w) { return rnd(gh(b, w)); }
@@ -192,10 +194,16 @@ static void spawnBeach(Game& G, const AudioIn& A, double now) {   // called on a
   int k = (int)ceilf(need / T); if (k < 2) k = 2;
   const double arr = now + k * T;
   if (arr - b.lastArr < b.nextGap || ((A.beatN & 1) && A.level < 0.55f)) return;   // room between obstacles
-  b.lastArr = arr; b.nextGap = 3.5 + rand01(G) * 5.5;   // rare enough to matter: every 3.5 to 9 s
+  const double gap = arr - b.lastArr; b.lastArr = arr; b.nextGap = 3.5 + rand01(G) * 5.5;   // rare enough to matter: every 3.5 to 9 s
   for (Obs& o : b.obs) if (!o.live) {
     o.live = true; o.done = false; o.arr = arr; o.wx = b.scroll + (float)(arr - now) * V;
-    { float r = rand01(G); o.kind = b.forest ? (r < 0.4f ? OB_LOG : r < 0.7f ? OB_TIGER : OB_BEAR) : (r < 0.25f ? OB_LOG : OB_TURTLE); }   // the hills: logs, tigers, bears; the beach: logs and turtles
+    { float r = rand01(G);   // the hills: logs, tigers, bears; the flat forest: also ponds; the beach: logs and turtles
+      o.kind = b.hills ? (r < 0.4f ? OB_LOG : r < 0.7f ? OB_TIGER : OB_BEAR) : b.forest ? (r < 0.2f ? OB_LOG : r < 0.4f ? OB_TIGER : r < 0.6f ? OB_BEAR : OB_POND) : (r < 0.25f ? OB_LOG : OB_TURTLE);
+      o.wide = o.pulse = o.hasCroc = false;
+      if (o.kind == OB_POND) { o.wide = rand01(G) < 0.3f && gap >= 1.5; o.pulse = !o.wide && rand01(G) < 0.4f; o.hasCroc = o.wide || rand01(G) < 0.55f; }   // a wide pond (two crocodiles) is crossed on a vine; some ponds breathe with the volume
+      o.hw = o.kind == OB_LOG ? 8 : o.kind == OB_TIGER ? 14 : o.kind == OB_BEAR ? 12 : o.wide ? 28 : o.pulse ? 12 : 14;
+      if (o.wide) b.lastArr = arr + 0.9;
+    }
     break;
   }
 }
@@ -226,7 +234,7 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
   b.scroll += V * G.sp * dt;
   for (Obs& o : b.obs) if (o.live && obsX(b, o) < -40) o.live = false;
   if (b.jump >= 0) { b.jump += dt; if (b.jump > b.jd) b.jump = -1; }
-  if (b.forest) {   // the ground is built like KeySpeaker's terrain: each new column at the right edge; at most two blocks of step, so that he can run it
+  if (b.hills) {   // the ground is built like KeySpeaker's terrain: each new column at the right edge; at most two blocks of step, so that he can run it
     int eC = (int)floorf((b.scroll - HX) / PITCH);
     if (b.trN < eC - 2) { b.trN = eC; b.trPrev = 0; }
     while (b.trN * PITCH < b.scroll + W - HX + 16) {
@@ -239,17 +247,21 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
     G.sl += (fmaxf(-1.0f, fminf(1.0f, (gh(b, b.scroll + 4) - gh(b, b.scroll - 4)) / 8 / 0.5f)) - G.sl) * 0.2f;   // uphill he leans in and shortens his stride, downhill he leans back
   }
   Hunter& hu = b.hunter;
-  if (!hu.live && now >= b.nextHunter && !G.fadeDir && !G.hide) { hu = Hunter(); hu.live = true; hu.front = (++b.hunterN & 1) != 0; b.nextHunter = now + 17 + rand01(G) * 7; }
+  if (!hu.live && now >= b.nextHunter && !G.fadeDir && !G.hide && !b.swing.live) { hu = Hunter(); hu.live = true; hu.front = (++b.hunterN & 1) != 0; b.nextHunter = now + 17 + rand01(G) * 7; }
   if (hu.live) {
     hu.t += dt;
     if (!hu.dodged && hu.t >= (hu.front ? 2.4f : 1.5f)) { hu.dodged = true; if (b.jump < 0 && !G.hide) { b.jump = 0; b.jd = JD; b.jh = JH; } }   // the hero leaps and leaves him behind
     if (hu.t > 5) hu.live = false;
   }
-  if (b.jump < 0) {   // hop what comes: he leaves the ground half a jump before it arrives, so he lands on the beat
-    for (Obs& o : b.obs) if (o.live && !o.done) { float t = obsTtl(b, o); if (t < JD / 2 && t > -0.1f) { b.jd = JD; b.jh = JH; b.jump = fmaxf(0, b.jd / 2 - t); o.done = true; break; } }
+  for (Obs& o : b.obs) if (o.live && o.pulse && obsX(b, o) > HX + 75) o.hw += ((8 + 12 * A.level) - o.hw) * fminf(1.0f, dt * 6);   // a breathing pond: its width follows the volume until it is close, then it holds still
+  if (b.swing.live) { float dx = obsTtl(b, b.obs[b.swing.o]) * V; if (dx < -40) { b.swing.pt += dt; if (b.swing.pt > 0.4f) b.swing.live = false; } }
+  else if (b.jump < 0) { for (int i = 0; i < 6; i++) { Obs& o = b.obs[i]; if (o.live && o.wide && !o.done) { float d = obsTtl(b, o) * V; if (d < 67 && d > -40) { o.done = true; b.swing.live = true; b.swing.o = i; b.swing.pt = 0; break; } } } }
+  if (b.jump < 0 && !b.swing.live) {   // hop what comes: he leaves the ground half a jump before it arrives, so he lands on the beat
+    for (Obs& o : b.obs) if (o.live && !o.done && !o.wide) { float t = obsTtl(b, o); if (t < JD / 2 && t > -0.1f) { b.jd = JD; b.jh = JH; b.jump = fmaxf(0, b.jd / 2 - t); o.done = true; break; } }
   }
   if (!b.forest && !G.fadeDir && now - b.shipStart >= 48) switchTo(G, SC_FOREST);   // the liner disappears at the horizon, and the beach gives way to forest
-  if (b.forest && !G.fadeDir && !G.hide && now - G.t0 >= 55) switchTo(G, SC_WALL);   // the trail ends at a landslide
+  if (b.hills && !G.fadeDir && !G.hide && now - G.t0 >= 55) switchTo(G, SC_WALL);   // the trail ends at a landslide
+  if (b.forest && !b.hills && !G.fadeDir && !G.hide && now - G.t0 >= 100) switchTo(G, SC_LINER);   // the treasure and the hidden shaft come next in the web demo; until they are ported, the story starts again
 }
 
 static inline float rvTtl(const River& r, const RvObs& o) { return (o.wx - r.scroll) / V; }
@@ -281,7 +293,7 @@ static void updateRiver(Game& G, const AudioIn& A, float dt, double now) {
   if (A.beatNow || rand01(G) < 0.04f) for (RvBubble& b : r.bub) if (!b.live) { b.live = true; b.x = HX - 4; b.y = r.laneY - 4; b.v = 18 + rand01(G) * 14; break; }
   for (RvBubble& b : r.bub) if (b.live) { b.y -= b.v * dt; b.x -= V * 0.3f * dt; if (b.y <= 36 || b.x <= -4) b.live = false; }
   for (RvObs& o : r.obs) if (o.live && HX + o.wx - r.scroll <= -40) o.live = false;
-  if (!G.fadeDir && now - G.t0 >= 90 && (r.scroll > V * 90 * 0.65f || now - G.t0 >= 165)) switchTo(G, SC_LINER);   // the flat forest comes next in the web demo; until it is ported, the story starts again
+  if (!G.fadeDir && now - G.t0 >= 90 && (r.scroll > V * 90 * 0.65f || now - G.t0 >= 165)) switchTo(G, SC_FOREST3);   // the river gives way to the flat forest
 }
 
 static void updateWall(Game& G, const AudioIn& A, float dt, double now) {
@@ -621,7 +633,16 @@ static void drawForestBack(const Game& G, const AudioIn& A, double now) {
     Ri(x + 2, h - 3, 4, 2, rgb(174, 229, 67));
   }
   if (1 - A.level > 0.45f) for (int i = 0; i < 3; i++) { int ex = (int)(fmod(fmod(i * 97 - sc * 0.5, 260) + 260, 260)) - 10; if (tsin(now * 2 + i * 2) > -0.7f) { Ri(ex, GY - 22 - i * 6, 2, 2, rgb(255, 210, 60)); Ri(ex + 6, GY - 22 - i * 6, 2, 2, rgb(255, 210, 60)); } }   // eyes in the bushes when it is quiet
-  for (int x = 0; x < W; x += 4) { int y = GY - ghr(b, sc + x - HX); Ri(x, y + 4, 4, H - y - 4, rgb(110, 70, 30)); Ri(x, y + 14, 4, 12, rgb(70, 44, 20)); Ri(x, y, 4, 4, rgb(40, 170, 50)); }   // the ground is the volume
+  if (b.hills) { for (int x = 0; x < W; x += 4) { int y = GY - ghr(b, sc + x - HX); Ri(x, y + 4, 4, H - y - 4, rgb(110, 70, 30)); Ri(x, y + 14, 4, 12, rgb(70, 44, 20)); Ri(x, y, 4, 4, rgb(40, 170, 50)); } }   // the ground is the volume
+  else {   // the flat forest: level ground with tufts and pits, fixed to the world
+    Ri(0, GY, W, 4, rgb(40, 170, 50)); Ri(0, GY + 4, W, H - GY - 4, rgb(110, 70, 30)); Ri(0, GY + 14, W, 12, rgb(70, 44, 20));
+    for (int i = -1; i < 28; i++) {
+      int k = (int)floorf((sc - HX) / 9) + i; float x = HX + k * 9 - sc;
+      uint32_t hh = (uint32_t)k * 2654435761u; int a = (hh >> 8) % 5, bb = (hh >> 16) % 7;
+      if (a < 2) { uint16_t gc = rgb(20, 130, 40); R(x, GY - 2, 1, 2, gc); R(x + 2, GY - 3, 1, 3, gc); R(x + 4, GY - 2, 1, 2, gc); }
+      if (bb == 0) R(x, GY + 7, 5, 2, rgb(140, 100, 58)); else if (bb == 3) R(x + 1, GY + 11, 3, 2, rgb(30, 18, 10)); else if (bb == 5) R(x, GY + 5, 2, 1, rgb(140, 100, 58));
+    }
+  }
 }
 
 // ---- The wall, drawn.
@@ -894,6 +915,33 @@ static void drawRiver(const Game& G, const AudioIn& A, double now) {
   drawHero(HX, (float)(rnd(r.laneY) + 8), now, HM_SWIM);
 }
 
+static void drawCrocHead(float x, int sy, double now, float tt) {   // a pond crocodile: just a head, in profile, facing the hero; eyes lurk at the surface; as he comes the head rises, the jaws gape, then it sinks again
+  const uint16_t CROC = rgb(40, 140, 60), CROCD = rgb(20, 90, 40), RED = rgb(170, 30, 44), GOLD = rgb(255, 210, 60), W2 = rgb(40, 110, 220);
+  const float hx = x + 4, up = cl01((1.5f - tt) / 0.55f) * (1 - cl01((-0.5f - tt) / 0.4f)); const bool open_ = tt < 0.7f && tt > -0.3f; (void)open_;
+  const float y = (float)(sy + rnd((1 - up) * 16));
+  gClipB = sy + 1;   // the water hides whatever is below the surface
+  if (up < 0.15f) { R(hx + 3, sy - 1, 2, 1, GOLD); R(hx - 9, sy - 1, 2, 1, GOLD); }
+  else {
+    R(hx - 2, y - 4, 9, 5, CROC); R(hx + 2, y - 8, 4, 4, CROC); R(hx + 3, y - 7, 2, 2, GOLD); R(hx + 8, y - 1, 8, 2, CROCD);
+    const float ang = 90 * sm01(cl01((1.0f - tt) / 0.55f)) * (1 - sm01(cl01((-0.15f - tt) / 0.45f))); const float a = rnd(ang / 22.5f) * 22.5f * DEG;   // the jaws open in steps
+    if (a == 0) { R(hx - 22, y - 4, 21, 5, CROC); R(hx - 22, y - 1, 21, 1, CROCD); R(hx - 23, y - 5, 2, 1, CROC); }
+    else {
+      R(hx - 24, y - 1, 25, 5, CROC); R(hx - 24, y - 1, 25, 2, RED); for (int i = 0; i < 12; i++) R(hx - 24 + i * 2, y - 2, 1, 1, WHITE565);
+      const float px = hx - 1, py = y - 1, L = 23, dx = -cosf(a), dy = -sinf(a), nx = -sinf(a), ny = cosf(a);
+      seg(px, py, px + dx * L, py + dy * L, CROC, 5);
+      for (int i = 1; i < 11; i++) { float f = i / 11.0f * L, qx = px + dx * f + nx * 3, qy = py + dy * f + ny * 3; R(qx - 1, qy - 1, 2, 2, RED); R(qx - 2, qy - 2, 1, 1, WHITE565); }
+    }
+  }
+  gClipB = H;
+  if (tt < 1.8f && tt > -0.9f) { int w = 6 + rnd(8 * (1 - fminf(1.0f, fabsf(tt - 0.3f) / 1.2f))); R(hx - 14 - (w >> 1), sy + 1, w, 1, W2); R(hx + 6, sy + 1, w, 1, W2); }   // ripples
+}
+static void drawPond(const Obs& o, float x, double now, float tt) {
+  const uint16_t WATER = rgb(20, 70, 170), WATER2 = rgb(40, 110, 220);
+  const float hw = o.hw;
+  R(x - hw, GY, hw * 2, 12, WATER); R(x - hw, GY, hw * 2, 2, WATER2);
+  if (o.wide) { drawCrocHead(x - 14, GY, now, tt); drawCrocHead(x + 16, GY, now, tt + 0.12f); } else if (o.hasCroc) drawCrocHead(x + 2, GY, now, tt);
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -909,12 +957,29 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
   }
   if (b.tree.live) drawTree(b.tree, b, A, now);
   for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; const int gy = GY - ghr(b, o.wx);
-    if (o.kind == OB_LOG) drawLog(x, gy); else if (o.kind == OB_NUT) drawNut(o, x, b, now); else if (o.kind == OB_TIGER) drawTiger(x, (float)gy, now, obsTtl(b, o)); else if (o.kind == OB_BEAR) drawBear(x, (float)gy, now, obsTtl(b, o)); else drawBeachTurtle(x, now); }
+    if (o.kind == OB_LOG) drawLog(x, gy); else if (o.kind == OB_NUT) drawNut(o, x, b, now); else if (o.kind == OB_TIGER) drawTiger(x, (float)gy, now, obsTtl(b, o)); else if (o.kind == OB_BEAR) drawBear(x, (float)gy, now, obsTtl(b, o)); else if (o.kind == OB_POND) drawPond(o, x, now, obsTtl(b, o)); else drawBeachTurtle(x, now); }
   if (G.hide && G.hideT > 0.8f) drawJaguar(W + 30 - (G.hideT - 0.8f) * 75, now);
   if (b.hunter.live) drawJungleHunter(b.hunter, b);
   const float gb = (float)(GY - ghr(b, sc));   // where he stands: the ground under him
   float y = gb; HeroMode mode = G.hide ? (G.hideT < 5.0f ? HM_HIDE : HM_IDLE) : HM_RUN;
   if (b.jump >= 0) { float u = b.jump / b.jd; y = gb - 4 * b.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; }
+  const float VL = 50, AY = 2; auto feetP = [&](float dx) { return AY + sqrtf(VL * VL - fminf(VL * VL - 1, dx * dx)) + 23; };   // the vine: anchored in the canopy, 50 px long; his hands are 23 px above his feet
+  bool postJump = false; const Obs* hang = nullptr;
+  if (b.swing.live) {
+    const Obs& so = b.obs[b.swing.o]; const float dx = obsTtl(b, so) * V; hang = &so;
+    SWING_K = fmaxf(-1.0f, fminf(1.0f, dx / 40));
+    if (dx > 40) y = lp(gb, feetP(40), sm01(cl01((67.5f - dx) / 27.5f)));
+    else if (dx > -40) y = feetP(dx);
+    else { y = lp(feetP(-40), gb, powf(cl01(b.swing.pt / 0.4f), 2)); postJump = true; }
+    mode = postJump ? HM_AIR : HM_SWING; if (postJump) AIR_U = 0.8f;
+  }
+  for (const Obs& o : b.obs) if (o.live && o.wide) {   // the vine hangs from the canopy over every wide pond
+    const float xa = obsX(b, o); if (xa < -60 || xa > W + 60) continue;
+    float ex = xa + rnd(4 * tsin(now * 2)), ey = AY + VL;
+    if (&o == hang && !postJump) { const float hx = HX + 3, hy = y - 23, d = hypotf(hx - xa, hy - AY); if (d > VL) { ex = xa + (hx - xa) * VL / d; ey = AY + (hy - AY) * VL / d; } else { ex = hx; ey = hy; } }
+    else if (&o == hang) { ex = xa + 12; ey = AY + 48; }
+    seg(xa, AY, ex, ey, rgb(70, 150, 40), 1); for (int k = 1; k < 6; k++) R(lp(xa, ex, k / 6.0f) - 1, lp(AY, ey, k / 6.0f), 2, 1, rgb(40, 100, 28)); R(ex - 1, ey, 3, 3, rgb(70, 150, 40));
+  }
   HC.slope = 0.5f * G.sl; HC.wob = G.sl > 0 ? 4 * G.sl : 12 * G.sl;   // uphill he leans in, downhill he leans back
   drawHero(HX, (float)rnd(y), now, mode);
   HC.slope = 0; HC.wob = 0;
@@ -935,6 +1000,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : G.scene == SC_FOREST3 ? "FOREST" : "LINER"; }
 
 }  // namespace beatadv

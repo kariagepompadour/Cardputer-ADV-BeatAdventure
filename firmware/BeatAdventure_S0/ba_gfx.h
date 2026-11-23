@@ -28,6 +28,7 @@ static uint16_t* FB = nullptr;           // the frame buffer being drawn into
 static float gAlpha = 1.0f;              // the web demo's globalAlpha: below 1, R() blends
 static bool gMirror = false;             // draw mirrored about x = gMirrorX (the web demo's translate(x, 0); scale(-1, 1); translate(-x, 0))
 static int gMirrorX = 0;
+static int gClipB = H;                   // draw nothing below this row (the web demo's clip(): a crocodile's head is cut off by the water)
 static bool gRot = false;                // draw rotated (the web demo's translate(ox, oy); rotate(a)): R() fills the rotated rectangle pixel by pixel
 static float gRotCos = 1, gRotSin = 0, gRotX = 0, gRotY = 0;
 
@@ -55,6 +56,7 @@ static inline void R(float xf, float yf, int w, int h, uint16_t c) {
   }
   if (gMirror) x = 2 * gMirrorX - x - w;
   int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y, x1 = x + w > W ? W : x + w, y1 = y + h > H ? H : y + h;
+  if (y1 > gClipB) y1 = gClipB;
   if (x1 <= x0 || y1 <= y0) return;   // wholly off the screen
   if (gAlpha < 0.999f) { uint16_t d = swap565(c); fillA(x0, y0, x1 - x0, y1 - y0, (d >> 11) << 3, ((d >> 5) & 63) << 2, (d & 31) << 3, gAlpha); return; }
   const uint32_t cc = (uint32_t)c | ((uint32_t)c << 16);
