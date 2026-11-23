@@ -1000,8 +1000,31 @@ static std::atomic<uint32_t> drawMaxUs{0};     // slowest game frame (analysis +
 static void drawViz(uint32_t now) {
   uint32_t t0 = micros();
   if (!viz.ready || now / 1000.0 - viz.lastNow > 1.0) beatadv::init(viz, now);  // first time, or back from the other screen
+  uint32_t u0 = micros();
   beatadv::update(viz, now, vizPcm, VIZ_PCM_N - 1, vizPcmPos.load(std::memory_order_acquire), micOn ? MIC_RATE : RATE);
+  uint32_t upUs = micros() - u0;
   beatadv::render(viz, static_cast<uint16_t*>(canvas.getBuffer()), now);
+  // (B0-1b) What the game screen costs and sees, once a second: frames a second, the slowest analysis, beats (and plain-onset beats)
+  // a second, the tracker's tempo, lock and confidence. On the screen at the top left and on the serial port as "[BA] ...".
+  static uint32_t repMs = 0, repFrames = 0, repUpMax = 0, repBeats = 0, repPlain = 0, shownFps = 0, shownUpMax = 0, shownBeats = 0;
+  repFrames++;
+  if (upUs > repUpMax) repUpMax = upUs;
+  if (viz.beatNow) { repBeats++; if (viz.plainBeat) repPlain++; }
+  if (now - repMs >= 1000) {
+    shownFps = repFrames; shownUpMax = repUpMax; shownBeats = repBeats;
+    Serial.printf("[BA] src=%s fps=%lu upd_max=%.1f ms bpm=%d %s conf=%.2f level=%.2f rms=%.3f oss=%.1f beats=%lu (plain %lu) heap=%u\n",
+                  micOn ? "mic" : auxOn ? "aux" : mp3On ? "mp3" : "usb", (unsigned long)repFrames, repUpMax / 1000.0f,
+                  (int)lrintf(60.0f / viz.T), viz.bt.locked ? "PULSE" : "onset", viz.bt.conf, viz.level, viz.rms, viz.oss,
+                  (unsigned long)repBeats, (unsigned long)repPlain, (unsigned)ESP.getFreeHeap());
+    repMs = now; repFrames = 0; repUpMax = 0; repBeats = 0; repPlain = 0;
+  }
+  {
+    char b[40];
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_DIM);
+    snprintf(b, sizeof b, "%lufps up%.1f b%lu", (unsigned long)shownFps, shownUpMax / 1000.0f, (unsigned long)shownBeats);
+    canvas.drawString(b, 4, 10);
+  }
   {  // what the tracker sees (B0-1): tempo, whether it holds a clear pulse, its confidence, the level
     char b[64];
     canvas.setTextSize(1);

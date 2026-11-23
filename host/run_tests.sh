@@ -6,4 +6,6 @@ cd "$(dirname "$0")"
 OUT=$(mktemp -d)
 g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/beat_test" beat_test.cpp
 "$OUT/beat_test"
+g++ -std=c++17 -O2 -w -o "$OUT/analysis_test" analysis_test.cpp
+"$OUT/analysis_test"
 rm -rf "$OUT"
