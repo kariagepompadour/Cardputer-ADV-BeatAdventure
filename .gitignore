@@ -1,0 +1,4 @@
+.DS_Store
+build/
+*.ino.bin
+SHA256SUMS.txt
