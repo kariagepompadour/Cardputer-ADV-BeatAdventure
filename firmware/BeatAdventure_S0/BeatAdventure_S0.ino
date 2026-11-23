@@ -1003,34 +1003,48 @@ static void drawViz(uint32_t now) {
   uint32_t u0 = micros();
   beatadv::update(viz, now, vizPcm, VIZ_PCM_N - 1, vizPcmPos.load(std::memory_order_acquire), micOn ? MIC_RATE : RATE);
   uint32_t upUs = micros() - u0;
+  uint32_t r0 = micros();
   beatadv::render(viz, static_cast<uint16_t*>(canvas.getBuffer()), now);
+  uint32_t drUs = micros() - r0;
   // (B0-1b) What the game screen costs and sees, once a second: frames a second, the slowest analysis, beats (and plain-onset beats)
   // a second, the tracker's tempo, lock and confidence. On the screen at the top left and on the serial port as "[BA] ...".
-  static uint32_t repMs = 0, repFrames = 0, repUpMax = 0, repBeats = 0, repPlain = 0, shownFps = 0, shownUpMax = 0, shownBeats = 0;
+  static uint32_t repMs = 0, repFrames = 0, repUpMax = 0, repDrMax = 0, repBeats = 0, repPlain = 0, shownFps = 0, shownUpMax = 0, shownDrMax = 0, shownBeats = 0;
   repFrames++;
   if (upUs > repUpMax) repUpMax = upUs;
+  if (drUs > repDrMax) repDrMax = drUs;
   if (viz.beatNow) { repBeats++; if (viz.plainBeat) repPlain++; }
   if (now - repMs >= 1000) {
-    shownFps = repFrames; shownUpMax = repUpMax; shownBeats = repBeats;
-    Serial.printf("[BA] src=%s fps=%lu upd_max=%.1f ms bpm=%d %s conf=%.2f level=%.2f rms=%.3f oss=%.1f beats=%lu (plain %lu) heap=%u\n",
-                  micOn ? "mic" : auxOn ? "aux" : mp3On ? "mp3" : "usb", (unsigned long)repFrames, repUpMax / 1000.0f,
+    shownFps = repFrames; shownUpMax = repUpMax; shownDrMax = repDrMax; shownBeats = repBeats;
+    Serial.printf("[BA] src=%s fps=%lu upd_max=%.1f ms draw_max=%.1f ms bpm=%d %s conf=%.2f level=%.2f rms=%.3f oss=%.1f beats=%lu (plain %lu) heap=%u\n",
+                  micOn ? "mic" : auxOn ? "aux" : mp3On ? "mp3" : "usb", (unsigned long)repFrames, repUpMax / 1000.0f, repDrMax / 1000.0f,
                   (int)lrintf(60.0f / viz.T), viz.bt.locked ? "PULSE" : "onset", viz.bt.conf, viz.level, viz.rms, viz.oss,
                   (unsigned long)repBeats, (unsigned long)repPlain, (unsigned)ESP.getFreeHeap());
-    repMs = now; repFrames = 0; repUpMax = 0; repBeats = 0; repPlain = 0;
+    repMs = now; repFrames = 0; repUpMax = 0; repDrMax = 0; repBeats = 0; repPlain = 0;
   }
   {
     char b[40];
     canvas.setTextSize(1);
     canvas.setTextColor(COL_DIM);
-    snprintf(b, sizeof b, "%lufps up%.1f b%lu", (unsigned long)shownFps, shownUpMax / 1000.0f, (unsigned long)shownBeats);
+    snprintf(b, sizeof b, "%lufps up%.1f dr%.1f b%lu", (unsigned long)shownFps, shownUpMax / 1000.0f, shownDrMax / 1000.0f, (unsigned long)shownBeats);
     canvas.drawString(b, 4, 10);
   }
-  {  // what the tracker sees (B0-1): tempo, whether it holds a clear pulse, its confidence, the level
+  {  // the status line, as in the web demo: the stage, the day, the tempo (green PULSE when the tracker holds a clear pulse, amber onset when not)
     char b[64];
     canvas.setTextSize(1);
-    canvas.setTextColor(viz.sounding ? (viz.bt.locked ? COL_OK : COL_AMBER) : COL_DIM);
-    snprintf(b, sizeof b, "%3d bpm %s c%.2f lv%.2f", (int)lrintf(60.0f / viz.T), viz.bt.locked ? "PULSE" : "onset", viz.bt.conf, viz.level);
-    canvas.drawString(b, 4, 125);
+    snprintf(b, sizeof b, "%s  DAY %d  %d bpm", beatadv::stageName(viz), beatadv::dayNumber(viz), (int)lrintf(60.0f / viz.T));
+    canvas.setTextColor(COL_BG);
+    canvas.drawString(b, 5, 128);   // a 1 px shadow keeps it readable over bright skies and water
+    canvas.setTextColor(0xCE59);
+    canvas.drawString(b, 4, 127);
+    if (viz.sounding) {
+      canvas.setTextColor(viz.bt.locked ? COL_OK : COL_AMBER);
+      canvas.drawString(viz.bt.locked ? "PULSE" : "onset", 180, 117);
+    } else {
+      canvas.setTextColor(COL_FG);
+      canvas.drawString("BEAT ADVENTURE", 70, 56);
+      canvas.setTextColor(COL_DIM);
+      canvas.drawString("play some music", 69, 70);
+    }
   }
 
   // Status line, only when something is wrong (S5-13, the user's call; until then it was always there, dim): not

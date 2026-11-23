@@ -24,10 +24,11 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include "ba_gfx.h"
+#include "ba_game.h"
 
 namespace beatadv {
 
-constexpr int W = 240, H = 135;
 constexpr int DOT = 3;
 constexpr int SHIP_DW = 9, SHIP_DH = 4, SHIP_W = SHIP_DW * DOT, SHIP_H = SHIP_DH * DOT;
 // Placeholder for the hero in the input-switch effect (Fn+I): a 9 x 4 dot ship, W hull, B shade, M trim, C canopy.
@@ -168,6 +169,7 @@ struct State {
   uint16_t ossBin[4];                  // the onset strength's three bands in bins: [0,1) [1,2) [2,3)
   uint16_t flat[2];                    // the plain onset detector's bins
   float oss = 0;
+  Game game;                           // the adventure
 };
 
 static float fftRe[FFT_N], fftIm[FFT_N], win[FFT_N], twC[FFT_N / 2], twS[FFT_N / 2];
@@ -197,6 +199,12 @@ static void init(State& s, uint32_t nowMs) {
   s = State();
   s.lastNow = nowMs / 1000.0;
   s.ready = true;
+  gameInit(s.game, s.lastNow);
+}
+
+static AudioIn audioIn(const State& s) {
+  AudioIn a; a.beatNow = s.beatNow; a.sounding = s.sounding; a.T = s.T; a.level = s.level; a.pulse = s.pulse; a.eqH = s.eqH;
+  return a;
 }
 
 // One frame of the audio side: the newest FFT_N samples of ring (mono, mask + 1 samples, pos = the next write index) at `rate` Hz.
@@ -315,36 +323,15 @@ static void update(State& s, uint32_t nowMs, const int16_t* ring, uint32_t mask,
   }
   if (beat) { s.lastBeat = now; s.beatNow = true; s.beatN++; s.pulse = 1; }
   s.pulse *= powf(0.9f, 60.0f * dt);
+  gameUpdate(s.game, audioIn(s), dt, now);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Drawing (the stub screen). Colours are byte-swapped RGB565, as in M5Canvas's buffer.
-constexpr uint16_t swap(uint16_t c) { return (uint16_t)((c << 8) | (c >> 8)); }
-constexpr uint16_t rgb(int r, int g, int b) { return swap((uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))); }
-static inline void fillRect(uint16_t* fb, int x, int y, int w, int h, uint16_t c) {
-  int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y, x1 = x + w > W ? W : x + w, y1 = y + h > H ? H : y + h;
-  for (int yy = y0; yy < y1; yy++) for (int xx = x0; xx < x1; xx++) fb[yy * W + xx] = c;
+// Drawing: the game's picture into the frame buffer (byte-swapped RGB565, as in M5Canvas's buffer).
+static void render(State& s, uint16_t* fb, uint32_t nowMs) {
+  gameRender(s.game, audioIn(s), fb, nowMs / 1000.0);
 }
-
-static void render(const State& s, uint16_t* fb, uint32_t nowMs) {
-  (void)nowMs;
-  fillRect(fb, 0, 0, W, H, rgb(6, 8, 16));
-  static const uint8_t KP[8][3] = {{0, 0, 255}, {0, 255, 255}, {0, 255, 0}, {173, 255, 41}, {255, 255, 0}, {255, 165, 0}, {255, 0, 0}, {255, 0, 255}};
-  for (int b = 0; b < EQ_BANDS; b++) {   // the equalizer: 6 px bars of 3 px blocks, 8 blocks high at most
-    int n = (int)(s.eqH[b] + 0.5f);
-    for (int i = 0; i < n; i++) {
-      const uint8_t* c = KP[i];
-      fillRect(fb, b * 8 + 1, H - 14 - (i + 1) * 4, 6, 3, rgb(c[0], c[1], c[2]));
-    }
-  }
-  // The beat: a bar across the top that flashes on every beat (white from a clear pulse, amber from the plain bass onset), and a
-  // ring of four dots that count the beats.
-  int a = (int)(s.pulse * 255);
-  if (a > 255) a = 255;
-  fillRect(fb, 0, 0, W, 6, s.plainBeat ? rgb(a, a * 2 / 3, 0) : rgb(a, a, a));
-  for (int i = 0; i < 4; i++) fillRect(fb, 104 + i * 10, 10, 6, 6, (s.beatN & 3) == i && s.sounding ? rgb(255, 255, 255) : rgb(40, 44, 60));
-  int lh = (int)(s.level * 60);   // the level, on the right
-  fillRect(fb, 232, 70 - lh, 4, lh, rgb(60, 255, 210));
-}
+static const char* stageName(const State& s) { return gameStageName(s.game); }
+static int dayNumber(const State& s) { return s.game.day; }
 
 }  // namespace beatadv
