@@ -77,7 +77,18 @@ struct Vines { float t = 0; };
 enum BtPh : uint8_t { BT_SHORE, BT_BOARD, BT_CRUISE, BT_LIP, BT_DROP, BT_SPLASH };
 struct Boat { float t = 0; BtPh phase = BT_SHORE; };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_COUNT };
+// ---- Stage 7: the river (the web demo's "river", the open one): he swims in three lanes and changes lane to keep clear of crocodiles, piranhas, water snakes and drifting wood.
+constexpr int LANES[3] = {58, 84, 110};
+enum RvKind : uint8_t { RV_CROC, RV_PIRANHA, RV_SNAKE, RV_WOOD };
+struct RvObs { bool live = false, sine = false; RvKind kind = RV_WOOD; int lane = 1; float wx = 0; };
+struct RvBubble { bool live = false; float x = 0, y = 0, v = 0; };
+struct River {
+  float scroll = 0, laneY = LANES[1]; int lane = 1, lifeN = 0;
+  RvObs obs[10]; RvBubble bub[24];
+  double lastArr = 0, nextGap = 0.78, nextLife = 2;
+};
+
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_COUNT };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -92,6 +103,7 @@ struct Game {
   Wall wl;
   Vines vn;
   Boat bt;
+  River rv;
 };
 
 static void setScene(Game& G, Scene s, double now) {
@@ -100,6 +112,7 @@ static void setScene(Game& G, Scene s, double now) {
   if (s == SC_WALL) G.wl = Wall();
   if (s == SC_VINES) G.vn = Vines();
   if (s == SC_BOAT) G.bt = Boat();
+  if (s == SC_RIVER) { uint32_t r = G.bc.rng; G.rv = River(); G.bc.rng = r; G.rv.lastArr = now; G.rv.nextLife = now + 2; }
   if (s == SC_BEACH || s == SC_FOREST) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST; }
@@ -239,6 +252,38 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
   if (b.forest && !G.fadeDir && !G.hide && now - G.t0 >= 55) switchTo(G, SC_WALL);   // the trail ends at a landslide
 }
 
+static inline float rvTtl(const River& r, const RvObs& o) { return (o.wx - r.scroll) / V; }
+static void updateRiver(Game& G, const AudioIn& A, float dt, double now) {
+  River& r = G.rv;
+  r.scroll += V * G.sp * dt;
+  if (A.beatNow && !G.fadeDir && !G.isQuiet && A.level >= 0.06f) {   // on a beat: something comes along the river (crocodiles, piranhas and water snakes share the lanes)
+    const float T = A.T, need = (W + 18 - HX + 64) / V; int k = (int)ceilf(need / T); if (k < 2) k = 2;
+    const double arr = now + k * T;
+    if (!(arr - r.lastArr < r.nextGap || ((A.beatN & 1) && A.level < 0.55f))) {
+      r.lastArr = arr; r.nextGap = 2.2 + rand01(G) * 2.4;
+      for (RvObs& o : r.obs) if (!o.live) { float q = rand01(G); o.live = true; o.kind = q < 0.25f ? RV_CROC : q < 0.52f ? RV_PIRANHA : q < 0.73f ? RV_SNAKE : RV_WOOD; o.wx = r.scroll + (float)(arr - now) * V; o.sine = rand01(G) < 0.5f; o.lane = (int)(rand01(G) * 3); break; }
+    }
+  }
+  if (now >= r.nextLife && !G.fadeDir) {   // and on a schedule, the three kinds in turn
+    static const RvKind KINDS[3] = {RV_PIRANHA, RV_SNAKE, RV_CROC}; static const int LN[3] = {0, 2, 1};
+    const RvKind kind = KINDS[r.lifeN % 3]; const int lane = LN[r.lifeN % 3]; r.lifeN++;
+    const float wx = r.scroll + W - HX + 24; const double arr = now + (wx - r.scroll) / V;
+    for (RvObs& o : r.obs) if (!o.live) { o.live = true; o.kind = kind; o.wx = wx; o.sine = kind != RV_CROC; o.lane = lane; break; }
+    if (arr > r.lastArr) r.lastArr = arr; r.nextLife = now + 7;
+  }
+  {   // he changes lane to keep clear: out of the way of what is about to reach him, and back to the middle when the way is free
+    const RvObs* hit = nullptr; for (const RvObs& o : r.obs) if (o.live && o.lane == r.lane && rvTtl(r, o) < 0.75f && rvTtl(r, o) > -0.1f) { hit = &o; break; }
+    auto busy = [&](int l) { for (const RvObs& p : r.obs) if (p.live && p.lane == l && rvTtl(r, p) < 1.2f && rvTtl(r, p) > -0.2f) return true; return false; };
+    if (hit) { int best = -1; for (int l = 0; l < 3; l++) if (!busy(l) && (best < 0 || abs(l - r.lane) < abs(best - r.lane))) best = l; if (best >= 0) r.lane = best; }
+    else if (r.lane != 1 && !busy(1) && A.beatNow) r.lane = 1;
+  }
+  const float ty = (float)LANES[r.lane], dy = ty - r.laneY, step = fminf(fabsf(dy), 170 * dt); r.laneY += (dy > 0 ? 1.0f : dy < 0 ? -1.0f : 0.0f) * step;
+  if (A.beatNow || rand01(G) < 0.04f) for (RvBubble& b : r.bub) if (!b.live) { b.live = true; b.x = HX - 4; b.y = r.laneY - 4; b.v = 18 + rand01(G) * 14; break; }
+  for (RvBubble& b : r.bub) if (b.live) { b.y -= b.v * dt; b.x -= V * 0.3f * dt; if (b.y <= 36 || b.x <= -4) b.live = false; }
+  for (RvObs& o : r.obs) if (o.live && HX + o.wx - r.scroll <= -40) o.live = false;
+  if (!G.fadeDir && now - G.t0 >= 90 && (r.scroll > V * 90 * 0.65f || now - G.t0 >= 165)) switchTo(G, SC_LINER);   // the flat forest comes next in the web demo; until it is ported, the story starts again
+}
+
 static void updateWall(Game& G, const AudioIn& A, float dt, double now) {
   Wall& c = G.wl; const int ORDER[4] = {RH_, LF_, LH_, RF_};
   c.tt += dt; c.stepT += dt; c.dodge = fmaxf(0.0f, c.dodge - dt); c.grip = fmaxf(0.0f, c.grip - dt);
@@ -292,10 +337,11 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   updateMountains(G, A, now);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
   else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
+  else if (G.scene == SC_RIVER) updateRiver(G, A, dt, now);
   else if (G.scene == SC_BOAT) {
     Boat& b = G.bt; b.t += dt;
     b.phase = b.t < 1.6f ? BT_SHORE : b.t < 2.8f ? BT_BOARD : b.t < 8.4f ? BT_CRUISE : b.t < 11 ? BT_LIP : b.t < 13.5f ? BT_DROP : BT_SPLASH;
-    if (b.t >= 15.5f && !G.fadeDir) switchTo(G, SC_LINER);   // the waterfall basin opens into the crocodile river in the web demo; until the river is ported, the story starts again
+    if (b.t >= 15.5f && !G.fadeDir) setScene(G, SC_RIVER, now);   // the waterfall basin opens straight into the crocodile river
   }
   else if (G.scene == SC_VINES) { G.vn.t = fminf(TARZAN_TOTAL, G.vn.t + dt); if (G.vn.t >= TARZAN_TOTAL && !G.fadeDir) switchTo(G, SC_BOAT); }   // on to the brook and the boat
   else updateBeach(G, A, dt, now);
@@ -793,6 +839,61 @@ static void drawBoatfall(const Game& G, const AudioIn& A, double now) {   // vin
   else if (phase == BT_BOARD) { const float u = sm01(cl01((t - 1.6f) / 1.2f)); AIR_U = 0; drawHero((float)rnd(lp(70, 102, u)), (float)rnd(lp(85, 76 + bob, u) - 10 * sinf((float)M_PI * u)), now, HM_AIR); }
 }
 
+// ---- The river, drawn.
+static void drawRiverCroc(float x, float y, double now, float tt) {   // side profile, head facing left, swimming across the screen
+  const float t = (float)fmod(now * 4 + x * 0.025, 6.283185307179586); const uint16_t G = rgb(40, 140, 60), shade = rgb(20, 90, 40), belly = rgb(98, 150, 74), teeth = rgb(244, 231, 188), W2 = rgb(40, 110, 220);
+  for (int i = 0; i < 8; i++) { float tx = x + 16 + i * 3, ty = y + rnd(sinf(t - i * 0.55f) * (1 + i * 0.25f)); int hh = 5 - (int)floorf(i * 0.6f); if (hh < 1) hh = 1; int h2 = 9 - i; if (h2 < 2) h2 = 2; R(tx, ty - hh, 4, h2, G); }   // submerged tail
+  R(x - 11, y - 5, 29, 10, G); R(x - 9, y + 3, 27, 3, belly);
+  for (int i = 0; i < 5; i++) R(x - 4 + i * 5, y - 6, 3, 2, shade);
+  const int kick = rnd(sinf(t) * 2);
+  R(x + 4 + kick, y + 4, 7, 3, shade); R(x - 3 - kick, y + 4, 6, 3, shade);
+  R(x - 29, y - 4, 20, 7, G); R(x - 33, y - 3, 6, 6, G);   // the long sideways snout and the eye mound
+  R(x - 12, y - 9, 8, 6, G); R(x - 10, y - 8, 3, 3, teeth); R(x - 9, y - 8, 2, 2, shade);
+  R(x - 31, y - 4, 2, 1, shade);
+  const float gape = fmaxf(0.0f, sinf((1 - tt) * 4)) * sm01(cl01((1.2f - tt) / 0.6f));
+  if (gape > 0.25f) { const int drop = rnd(gape * 6); R(x - 31, y + 3 + drop, 24, 3, belly); R(x - 28, y + 3, 21, drop + 1, rgb(145, 42, 42)); for (int i = 0; i < 7; i++) R(x - 28 + i * 3, y + 3, 1, 2, teeth); }
+  else { R(x - 32, y + 3, 25, 2, belly); R(x - 30, y + 2, 18, 1, shade); }
+  R(x + 2, y + 7, 13, 1, W2); R(x - 26, y + 7, 16, 1, W2);
+}
+static void drawPiranha(float x, float y, double now) {   // small red fish, flashing teeth and a beating forked tail
+  const int kick = rnd(tsin(now * 12 + x * 0.06) * 2); const uint16_t red = rgb(217, 63, 54), dark = rgb(113, 37, 45);
+  R(x - 5, y - 4, 12, 8, red); R(x - 3, y - 5, 8, 1, rgb(246, 126, 67));
+  seg(x + 6, y, x + 12, y - 5 + kick, dark, 2); seg(x + 6, y, x + 12, y + 5 + kick, dark, 2);
+  R(x - 8, y - 2, 4, 5, red); R(x - 7, y - 1, 1, 1, rgb(255, 238, 185));
+  for (int i = 0; i < 3; i++) R(x - 7 + i * 2, y + 2, 1, 2, rgb(255, 247, 220));
+  R(x - 2, y + 4, 6, 1, dark);
+}
+static void drawRiverSnake(float x, float y, double now) {   // a long green body cuts through the open river, head facing the swimmer
+  const uint16_t body = rgb(82, 143, 70), shade = rgb(35, 86, 61);
+  for (int i = 0; i < 13; i++) { float sy = y + rnd(tsin(now * 3 - i * 0.65) * 3); int w = i > 9 ? 2 : 4; R(x + i * 3, sy, w, 3, body); R(x + i * 3, sy, w, 1, shade); }
+  R(x - 8, y - 3, 9, 6, body); R(x - 7, y - 4, 5, 2, shade); R(x - 6, y - 1, 1, 1, rgb(252, 224, 100));
+  if (tsin(now * 6) > 0) { R(x - 11, y + 1, 3, 1, rgb(214, 82, 83)); R(x - 12, y, 1, 3, rgb(214, 82, 83)); }
+}
+static void drawRiver(const Game& G, const AudioIn& A, double now) {
+  const River& r = G.rv; const Mtn& m = G.mt;
+  const uint16_t WATER = rgb(20, 70, 170), WATER2 = rgb(40, 110, 220), LEAFC = rgb(10, 90, 30);
+  R(0, 0, W, 40, rgb(14, 70, 36));
+  for (int i = 33; i >= 0; i--) { int x = W - m.farOff - (i + 1) * PITCH, h = 7 + 3 * m.far[i]; R(x, 40 - h, PITCH, h, rgb(8, 40, 24)); R(x, 40 - h, PITCH, 2, LEAFC); }   // the dark-green ridge keeps each volume-derived height as it scrolls left
+  for (int j = 0; j < 30; j++) { int n = rnd(A.eqH[j]); if (n > 6) n = 6; int x = j * PITCH + 1; for (int k = 0; k < n; k++) R(x, 40 - SEG * (k + 1) + 1, 6, SEG_H, SURF_EQ[5 - (k < 5 ? k : 5)]); }   // pale-blue-to-white wave blocks sit behind the waterline
+  R(0, 40, W, H - 40, WATER);
+  for (int x = 0; x < W; x += 2) { int wave = rnd(A.level * (4 * sinf(x * 0.11f - (float)fmod(now * 3, 6.283185307179586)) + 1.5f * sinf(x * 0.05f + (float)fmod(now * 1.7, 6.283185307179586)))), y = 34 + wave; R(x, y, 2, 40 - y, WATER); R(x, y, 2, 1, WATER2); }
+  R(0, 90, W, H - 90, rgb(14, 50, 140)); R(0, 116, W, H - 116, rgb(8, 24, 80));
+  static const uint16_t WEED[4] = {rgb(20, 94, 48), rgb(40, 155, 70), rgb(88, 198, 92), rgb(142, 214, 91)};
+  for (int j = 0; j < 30; j++) { int n = rnd(A.eqH[j]); if (n > 10) n = 10; int x = j * PITCH + 1; for (int k = 0; k < n; k++) { int sway = rnd(tsin(now * 2.1 + j * 0.65 + k * 0.23) * fminf(3.0f, k * 0.4f)); R(x + sway, H - 4 * (k + 1) + 1, 4, 4, WEED[j % 4]); } }   // green aquatic plants sway with the water
+  for (int i = 0; i < 18; i++) { int x = (int)fmodf(fmodf(i * 53 - r.scroll * 0.8f, 270) + 270, 270) - 15, y = 40 + (i * 29) % 90; R(x, y, 8, 1, WATER2); }
+  for (const RvObs& o : r.obs) if (o.live) {
+    const float x = HX + o.wx - r.scroll; if (x > W + 24) continue;
+    const float y = LANES[o.lane] + (o.sine ? rnd(tsin(now * 2.6 + o.wx * 0.02) * 13) : 0);   // a sine swimmer weaves up and down within its lane
+    if (o.kind == RV_CROC) drawRiverCroc(x, y, now, rvTtl(r, o));
+    else if (o.kind == RV_PIRANHA) drawPiranha(x, y, now);
+    else if (o.kind == RV_SNAKE) drawRiverSnake(x, y, now);
+    else { R(x - 12, y - 4, 24, 7, rgb(130, 80, 30)); R(x - 12, y - 4, 2, 7, rgb(190, 130, 60)); }
+  }
+  for (const RvBubble& b : r.bub) if (b.live) R(b.x, b.y, 2, 2, WATER2);
+  HC.slope = 0; HC.wob = 0;
+  drawHero(HX, (float)(rnd(r.laneY) + 8), now, HM_SWIM);
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -824,7 +925,7 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else if (G.scene == SC_RIVER) drawRiver(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
   const float kScene = (G.scene == SC_LINER || G.scene == SC_BEACH) ? 0.45f : G.scene == SC_BOAT ? 0.0f : 1.0f;   // the web demo: less dark at sea and on the beach, none on the brook
   float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * kScene;   // the quieter it gets, the darker
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
@@ -834,6 +935,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : "LINER"; }
 
 }  // namespace beatadv
