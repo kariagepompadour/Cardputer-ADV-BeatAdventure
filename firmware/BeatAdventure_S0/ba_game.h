@@ -104,6 +104,8 @@ struct CvSplash { bool live = false; float x = 0, t = 0; };
 struct Cave {
   float scroll = 0, wx = 560, pw = 0, ld = -0.45f, jump = -1, jd = JD; int depth = 0, stage = 0;   // stage 0: a hole; 1: a ladder up; 2: the golden doorway
   bool duck = false; double lastArr = 0, nextGap = 0.78, t = 0; float mvT = 0;
+  struct { bool live = false; float t = 0; } trap; struct { bool live = false; float x = 0; } arrows[4]; double nextArrow = 6;   // an arrow trap: a slit in the right wall flashes, then shoots
+  struct { bool live = false, roll = false, stop = false, gone = false; float t = 0, nx = 0, bw = 0, endT = -1; } boulder; bool bd = false;   // a huge boulder rolls down the tunnel behind him; there is a niche in the wall
   CvMv mv; CvObs obs[8]; CvDrip drips[16]; CvSplash splash[16]; Bat bats[2];
   uint8_t roof[128] = {}; int roofN = -2, roofPrev = 28; int cv = 28;   // the ceiling, one column every 8 px, each keeping its height while it scrolls left
 };
@@ -134,7 +136,7 @@ static void setScene(Game& G, Scene s, double now) {
   if (s == SC_WALL) G.wl = Wall();
   if (s == SC_VINES) G.vn = Vines();
   if (s == SC_BOAT) G.bt = Boat();
-  if (s == SC_CAVE) { uint32_t r = G.bc.rng; G.cv = Cave(); G.bc.rng = r; G.cv.lastArr = now; G.cv.roofN = -2; }
+  if (s == SC_CAVE) { uint32_t r = G.bc.rng; G.cv = Cave(); G.bc.rng = r; G.cv.lastArr = now; G.cv.nextArrow = now + 6; G.cv.roofN = -2; }
   if (s == SC_RIVER) { uint32_t r = G.bc.rng; G.rv = River(); G.bc.rng = r; G.rv.lastArr = now; G.rv.nextLife = now + 2; }
   if (s == SC_BEACH || s == SC_FOREST || s == SC_FOREST3) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s != SC_BEACH); G.bc.hills = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
@@ -367,13 +369,32 @@ static void updateCave(Game& G, const AudioIn& A, float dt, double now) {
     const double arr = now + k * T;
     if (!(arr - L.lastArr < L.nextGap || ((A.beatN & 1) && A.level < 0.55f))) {
       L.lastArr = arr; L.nextGap = 1.8 + rand01(G) * 2.2;
-      if (!(L.wx - L.scroll < 460)) for (CvObs& o : L.obs) if (!o.live) { float r = rand01(G); o.live = true; o.done = false; o.wx = L.scroll + (float)(arr - now) * V; o.kind = r < 0.14f ? CV_ROCK : r < 0.28f ? CV_STAL : r < 0.42f ? CV_LOW : r < 0.72f ? CV_SCORP : CV_SNAKE; break; }
+      if (!(L.wx - L.scroll < 460 || L.boulder.live)) for (CvObs& o : L.obs) if (!o.live) { float r = rand01(G); o.live = true; o.done = false; o.wx = L.scroll + (float)(arr - now) * V; o.kind = r < 0.14f ? CV_ROCK : r < 0.28f ? CV_STAL : r < 0.42f ? CV_LOW : r < 0.72f ? CV_SCORP : CV_SNAKE; break; }
     }
   }
   for (CvObs& o : L.obs) if (o.live && HX + o.wx - L.scroll <= -40) o.live = false;
   // jump what comes; duck under a low roof
   if (L.jump >= 0) { L.jump += dt; if (L.jump > JD) L.jump = -1; }
   L.duck = false;
+  // a rumble: a huge boulder comes down the tunnel; there is a niche in the wall just ahead
+  if (!L.bd && L.stage == 0 && !L.mv.live && L.ld >= 1 && !L.boulder.live && L.wx - L.scroll < 330 && L.wx - L.scroll > 250) {
+    L.bd = true; for (CvObs& o : L.obs) if (o.live && !(o.wx < L.scroll - 20)) o.live = false;
+    L.boulder = {}; L.boulder.live = true; L.boulder.nx = L.scroll + 120; }
+  if (L.boulder.live) {
+    auto& B = L.boulder; B.t += dt; const float dxn = B.nx - L.scroll;
+    if (!B.roll && dxn <= 0) { B.roll = true; B.bw = L.scroll + (W + 50 - HX); }   // he is in the niche: now it comes into view, from the right
+    if (B.roll) { B.bw -= 230 * dt; if (HX + B.bw - L.scroll < -60) B.gone = true; }
+    B.stop = dxn <= 0 && !(B.gone && HX + B.bw - L.scroll < -90);
+    if (B.gone && HX + B.bw - L.scroll < -90) { B.stop = false; if (B.endT < 0) B.endT = B.t; if (B.t - B.endT > 0.5f) B.live = false; }
+  }
+  // an arrow trap: a slit in the right wall flashes, then an arrow flies along the tunnel at head height
+  if (!L.mv.live && !L.boulder.live && !L.trap.live && A.beatNow && now > L.nextArrow && L.ld >= 1 && L.wx - L.scroll > 320) {
+    bool clear = true; for (const CvObs& o : L.obs) if (o.live && cvTtl(L, o) < 1.8f && cvTtl(L, o) > -0.3f) clear = false;
+    if (clear) { L.trap.live = true; L.trap.t = 0; L.nextArrow = now + (L.stage == 2 ? 2.5 + rand01(G) * 2.5 : 5 + rand01(G) * 4); }
+  }
+  if (L.trap.live) { L.trap.t += dt; if (L.trap.t > 0.5f) { for (auto& a : L.arrows) if (!a.live) { a.live = true; a.x = W - 2; break; } L.trap.live = false; } }
+  for (auto& a : L.arrows) if (a.live) { a.x -= 260 * dt; if (a.x <= -20) a.live = false; }
+  if (L.jump < 0 && !L.mv.live) { for (const auto& a : L.arrows) if (a.live && a.x - HX < 52 && a.x - HX > -6) L.duck = true; if (L.boulder.live && L.boulder.stop) L.duck = true; }   // he ducks under an arrow, and presses into the niche while the boulder passes
   for (const CvObs& o : L.obs) if (o.live && o.kind == CV_LOW && cvTtl(L, o) < 0.3f && cvTtl(L, o) > -0.28f && L.jump < 0) L.duck = true;
   if (L.jump < 0 && !L.duck && !L.mv.live) for (CvObs& o : L.obs) if (o.live && !o.done && o.kind != CV_LOW && cvTtl(L, o) < JD / 2 && cvTtl(L, o) > -0.1f) { L.jump = fmaxf(0, JD / 2 - cvTtl(L, o)); o.done = true; break; }
   // the way on: a hole down, a ladder up, then the golden doorway
@@ -436,7 +457,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && G.cv.mv.live)) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || (G.cv.boulder.live && G.cv.boulder.stop)))) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
   HC.sneak = G.sneak;
   if (!G.hide) HC.ph += dt * G.sp / (A.sounding ? A.T : 0.6f);   // the stride follows the beat: the left foot lands on it
   if (!G.hide && A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
@@ -1117,6 +1138,14 @@ static void drawLabFeature(const Cave& c, float xl, int kind, double now) {   //
   R(xl - 1, -24, 1, 24 + GY, LOG); R(xl + 3, -24, 1, 24 + GY, LOG); for (int yy = GY; yy > -24; yy -= 6) R(xl - 1, yy, 5, 1, LOGEND);
   (void)now;
 }
+
+static void drawBoulder(float cx, float cy, int r, float ang) {   // a huge round rock, turning as it rolls: craters carried round on its face, a shaded edge, a light top
+  const uint16_t Ac = rgb(112, 100, 94), Bc = rgb(88, 78, 74), Dc = rgb(60, 52, 50);
+  for (int dy = -r; dy <= r; dy++) { int h = (int)floorf(sqrtf((float)(r * r - dy * dy))); R(cx - h, cy + dy, 2 * h, 1, dy > r * 0.55f ? Dc : dy > r * 0.1f ? Bc : Ac); R(cx - h, cy + dy, 2, 1, Dc); R(cx + h - 2, cy + dy, 2, 1, Dc); }
+  for (int i = 0; i < 7; i++) { float th = ang + i * 0.9f, cr = (i % 3) * r * 0.22f + r * 0.2f, px = cosf(th) * cr, py = sinf(th) * cr; if (cosf(th * 0.7f) > -0.2f) { R(cx + px - 3, cy + py - 2, 6, 4, Dc); R(cx + px - 2, cy + py - 3, 4, 1, Bc); } }
+  R(cx - r * 0.5f, cy - r * 0.8f, (int)(r * 0.7f), 2, rgb(150, 138, 128));
+}
+static void drawArrow(float ax, float y) { R(ax, y, 12, 1, rgb(150, 110, 60)); R(ax - 4, y - 1, 4, 3, rgb(190, 196, 206)); R(ax - 2, y, 2, 1, WHITE565); R(ax + 10, y - 1, 3, 3, rgb(214, 60, 50)); R(ax + 11, y, 2, 1, WHITE565); }
 static void drawCave(Game& G, const AudioIn& A, double now) {
   const Cave& c = G.cv; const float sc = c.scroll; const CvMv& mv = c.mv; const int dep = c.depth;
   const float xl = HX + 5 + ((mv.live && mv.kind != MV_GATE) ? 0 : c.wx - sc);
@@ -1137,6 +1166,14 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
     for (const CvObs& o : c.obs) if (o.live) { float x = HX + o.wx - sc; if (x > W + 20 || x < -20) continue; int fh = o.kind != CV_LOW ? rnd(labH(c, o.wx)) : 0; gOffY = -fh; drawCaveObs(c, o, x, now); gOffY = 0; }   // things stand on the sloping floor
     for (const CvDrip& d : c.drips) if (d.live) R(d.x, d.y, 1, 3, DRIPC);
     for (const CvSplash& p : c.splash) if (p.live) { int w = 2 + rnd(p.t * 24); R(p.x - (w >> 1), GY - 1, w, 1, DRIPC); }
+    const int tyA = GY - rnd(labH(c, sc)) - 17;
+    if (c.trap.live) { R(W - 5, tyA - 2, 5, 5, rgb(0, 0, 0)); if ((int)floor(now * 16) & 1) { R(W - 4, tyA - 1, 3, 3, rgb(230, 60, 40)); PA(W - 30, tyA - 6, 30, 13, 255, 80, 40, 0.2f); } }   // the slit flashes before it shoots
+    for (const auto& a : c.arrows) if (a.live) drawArrow(a.x, (float)tyA);
+  }
+  if (c.boulder.live && c.boulder.roll) {   // the boulder rolls along the tunnel BEHIND him: he is in a niche cut into the near wall, in front of it
+    const float bxw = c.boulder.bw; const int bx = rnd(HX + bxw - sc); int r = (int)fminf(36.0f, (float)(rnd((GY - cey(c, (float)bx)) / 2.0f) - 1)); if (r < 4) r = 4; const int bf = GY - rnd(labH(c, bxw));
+    drawBoulder((float)bx, (float)(bf - r), r, bxw / r);
+    for (int i = 0; i < 3; i++) PA(bx + r + 4 + i * 9, bf - 5 - i * 3, 9, 5, 160, 140, 118, 0.35f - i * 0.09f);
   }
   const float gbL = (!mv.live) ? (float)(GY - rnd(labH(c, sc))) : (float)GY;   // he stands on the sloping floor
   float y = gbL; HeroMode mode = c.duck ? HM_HIDE : HM_RUN;
@@ -1150,8 +1187,12 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
     else if (ld < 0.4f) mode = HM_HIDE;   // and lands in a crouch, with dust
     if (ld >= 0 && ld < 0.55f) { const float q = ld / 0.55f; for (int sd = -1; sd <= 1; sd += 2) { R(HX + sd * (4 + rnd(q * 14)) - 1, GY - 2 - rnd(q * 3), 3, 2, rgb(126, 116, 100)); R(HX + sd * (2 + rnd(q * 8)) - 1, GY - 1, 2, 1, rgb(160, 150, 130)); } }
     HC.slope = 0.5f * G.sl; HC.wob = G.sl > 0 ? 4 * G.sl : 12 * G.sl;   // uphill he leans in, downhill he leans back
-    drawHero(HX, (float)rnd(y), now, mode);
+    drawHero(HX, (float)(rnd(y) + ((c.boulder.live && c.boulder.stop) ? 7 : 0)), now, mode);
     HC.slope = 0; HC.wob = 0;
+  }
+  if (c.boulder.live) {   // the near wall of the niche: two pillars and a lintel in front of the tunnel
+    const int nx = rnd(HX + c.boulder.nx - sc), nf = GY - rnd(labH(c, c.boulder.nx)) + 8; const uint16_t P = rgb(48, 38, 36), P2 = rgb(76, 60, 54);
+    R(nx - 27, nf - 58, 7, 66, P); R(nx + 20, nf - 58, 7, 66, P); R(nx - 27, nf - 58, 54, 7, P); R(nx - 27, nf - 58, 54, 1, P2); R(nx - 27, nf - 58, 1, 66, P2); R(nx + 26, nf - 58, 1, 66, P2); R(nx - 20, nf - 51, 40, 1, rgb(26, 20, 18));
   }
   for (const Bat& b : c.bats) if (b.live) drawBat(b, A, rgb(150, 100, 190));
   if (!c.duck && !mv.live && !(ld < 0)) { const int ty = rnd(y) - 22 + (c.jump >= 0 ? 0 : ((int)floorf(HC.ph * 2) & 1)); R(HX + 8, ty + 2, 1, 5, rgb(80, 50, 24)); const int fl = trebleFlame(G, now, 1); R(HX + 7, ty - 2 - fl, 3, 4 + fl, rgb(255, 210, 60)); R(HX + 8, ty - 1 - fl, 1, 2, rgb(255, 246, 192)); }   // the torch in his hand
