@@ -47,6 +47,7 @@ int main(int argc, char** argv) {
     A.pulse *= powf(0.9f, 60 * dt);
     A.level = 0.62f + 0.3f * sinf((float)t * 0.7f);
     if (quietFrom >= 0 && t >= quietFrom) A.level = 0.12f;
+    A.rms = 0.15f * A.level;
     for (int j = 0; j < 30; j++) { float v = 3.5f + 3.0f * sinf((float)t * 3 + j * 0.45f) * sinf((float)t * 0.9f + j * 0.2f); if (v > eq[j]) eq[j] = v; eq[j] -= 28 * dt; if (eq[j] < 0) eq[j] = 0; }
     gameUpdate(G, A, dt, t);
     if (t + dt / 2 >= times[ti]) {
