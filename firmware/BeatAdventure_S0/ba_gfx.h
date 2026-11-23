@@ -38,9 +38,15 @@ static inline void R(float xf, float yf, int w, int h, uint16_t c) {
   int x = rnd(xf), y = rnd(yf);
   if (gMirror) x = 2 * gMirrorX - x - w;
   int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y, x1 = x + w > W ? W : x + w, y1 = y + h > H ? H : y + h;
-  for (int yy = y0; yy < y1; yy++) {
-    uint16_t* row = FB + yy * W;
-    for (int xx = x0; xx < x1; xx++) row[xx] = c;
+  if (x1 <= x0 || y1 <= y0) return;   // wholly off the screen
+  const uint32_t cc = (uint32_t)c | ((uint32_t)c << 16);
+  for (int yy = y0; yy < y1; yy++) {   // two pixels at a time (the buffer's rows are 4-byte aligned)
+    uint16_t* p = FB + yy * W + x0;
+    int n = x1 - x0;
+    if (n > 0 && (((uintptr_t)p) & 2)) { *p++ = c; n--; }
+    uint32_t* q = (uint32_t*)p;
+    for (int k = n >> 1; k > 0; k--) *q++ = cc;
+    if (n & 1) *(uint16_t*)q = c;
   }
 }
 static inline void Ri(int x, int y, int w, int h, uint16_t c) { R((float)x, (float)y, w, h, c); }
@@ -54,19 +60,24 @@ static void seg(float xa, float ya, float xb, float yb, uint16_t c, int t) {
   for (int i = 0; i <= n; i++) R(x0 + (float)(x1 - x0) * i / n - (t >> 1), y0 + (float)(y1 - y0) * i / n - (t >> 1), t, t, c);
 }
 
-// A rectangle of colour (r, g, b) blended over the frame buffer with alpha a (0..1).
+// A rectangle of colour (r, g, b) blended over the frame buffer with alpha a (0..1), in 32 steps: the usual RGB565 trick, the three
+// channels spread over one 32-bit word so a pixel costs one multiply for each of the two terms.
 static void fillA(int x, int y, int w, int h, int r, int g, int b, float a) {
   if (a <= 0) return;
-  if (a > 1) a = 1;
-  int A = (int)(a * 256), x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y, x1 = x + w > W ? W : x + w, y1 = y + h > H ? H : y + h;
-  int sr = r >> 3, sg = g >> 2, sb = b >> 3;
+  int A = (int)(a * 32 + 0.5f);
+  if (A <= 0) return;
+  if (A > 32) A = 32;
+  int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y, x1 = x + w > W ? W : x + w, y1 = y + h > H ? H : y + h;
+  if (x1 <= x0 || y1 <= y0) return;
+  uint32_t s565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+  const uint32_t src = ((s565 | (s565 << 16)) & 0x07E0F81Fu) * (uint32_t)A, ia = (uint32_t)(32 - A);
   for (int yy = y0; yy < y1; yy++) {
     uint16_t* row = FB + yy * W;
     for (int xx = x0; xx < x1; xx++) {
-      uint16_t d = swap565(row[xx]);
-      int dr = d >> 11, dg = (d >> 5) & 63, db = d & 31;
-      dr += ((sr - dr) * A) >> 8; dg += ((sg - dg) * A) >> 8; db += ((sb - db) * A) >> 8;
-      row[xx] = swap565((uint16_t)((dr << 11) | (dg << 5) | db));
+      uint32_t d = swap565(row[xx]);
+      d = (d | (d << 16)) & 0x07E0F81Fu;
+      d = ((d * ia + src) >> 5) & 0x07E0F81Fu;
+      row[xx] = swap565((uint16_t)(d | (d >> 16)));
     }
   }
 }

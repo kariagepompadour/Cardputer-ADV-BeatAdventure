@@ -172,6 +172,15 @@ struct State {
   Game game;                           // the adventure
 };
 
+// log2 of a positive float, within 0.005: the exponent plus a cubic through the mantissa (a Cardputer frame has 255 of them).
+static inline float fastLog2(float x) {
+  union { float f; uint32_t i; } u = {x};
+  float e = (float)((int)((u.i >> 23) & 255) - 127);
+  u.i = (u.i & 0x007FFFFFu) | 0x3F800000u;
+  float m = u.f;
+  return e + ((-0.34484843f * m + 2.02466578f) * m - 0.67487759f);
+}
+
 static float fftRe[FFT_N], fftIm[FFT_N], win[FFT_N], twC[FFT_N / 2], twS[FFT_N / 2];
 static bool fftReady = false;
 
@@ -259,11 +268,11 @@ static void update(State& s, uint32_t nowMs, const int16_t* ring, uint32_t mask,
   }
   // Per bin: Web Audio's byte value (magnitude / N in dB, -100 .. -30 dB onto 0 .. 255) and its cube, the "lin" of the web demo
   // (cubing brings back the contrast, so a loud kick counts for more than a soft bass note).
-  static float lin[FFT_N / 2], byteV[FFT_N / 2], db[FFT_N / 2];
+  static float lin[FFT_N / 2], byteV[FFT_N / 2], pw[FFT_N / 2];
   for (int k = 1; k < FFT_N / 2; k++) {
-    float mag = sqrtf(fftRe[k] * fftRe[k] + fftIm[k] * fftIm[k]) / FFT_N;
-    float d = 20.0f * log10f(mag + 1e-12f);
-    db[k] = d;
+    float p2 = (fftRe[k] * fftRe[k] + fftIm[k] * fftIm[k]) * (1.0f / ((float)FFT_N * FFT_N));   // power: (magnitude / N) squared
+    pw[k] = p2;
+    float d = 3.0102999566f * fastLog2(p2 + 1e-24f);   // 20 log10(magnitude / N) = 10 log10(power) = 3.0103 log2(power)
     float bv = (d + 100.0f) / 70.0f * 255.0f;
     bv = bv < 0 ? 0 : bv > 255 ? 255 : bv;
     byteV[k] = bv;
@@ -275,8 +284,8 @@ static void update(State& s, uint32_t nowMs, const int16_t* ring, uint32_t mask,
     float bdb[EQ_BANDS];
     for (int b = 0; b < EQ_BANDS; b++) {
       float p = 0;
-      for (int k = s.bandBin[b]; k < s.bandBin[b + 1] && k < FFT_N / 2; k++) p += powf(10.0f, db[k] / 10.0f);
-      bdb[b] = 10.0f * log10f(p + 1e-12f);
+      for (int k = s.bandBin[b]; k < s.bandBin[b + 1] && k < FFT_N / 2; k++) p += pw[k];
+      bdb[b] = 3.0102999566f * fastLog2(p + 1e-12f);
     }
     bool silent = s.rms < 0.001f;
     if (!silent && !s.eqSet) { for (int b = 0; b < EQ_BANDS; b++) s.eqAvg[b] = bdb[b]; s.eqSet = true; }
