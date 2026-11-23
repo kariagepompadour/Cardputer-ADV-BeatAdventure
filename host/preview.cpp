@@ -26,17 +26,23 @@ int main(int argc, char** argv) {
   if (argc < 3) { fprintf(stderr, "usage: preview OUTDIR t0 t1 ...\n"); return 2; }
   const char* dir = argv[1];
   std::vector<double> times;
-  for (int i = 2; i < argc; i++) times.push_back(atof(argv[i]));
+  int startScene = -1;
+  for (int i = 2; i < argc; i++) {
+    if (!strcmp(argv[i], "--scene") && i + 1 < argc) { startScene = atoi(argv[++i]); continue; }
+    times.push_back(atof(argv[i]));
+  }
   static uint16_t fb[W * H];
   static float eq[30];
   Game G;
   gameInit(G, 0);
+  if (startScene >= 0) setScene(G, (Scene)startScene, 0);
   const float dt = 1.0f / 30;
   AudioIn A;
   A.sounding = true; A.T = 0.5f; A.eqH = eq;
   double next = 0; size_t ti = 0, nbeat = 0;
   for (double t = 0; ti < times.size(); t += dt) {
     A.beatNow = t >= next; if (A.beatNow) { next += A.T; nbeat++; A.pulse = 1; }
+    A.beatN = (long)nbeat;
     A.pulse *= powf(0.9f, 60 * dt);
     A.level = 0.62f + 0.3f * sinf((float)t * 0.7f);
     for (int j = 0; j < 30; j++) { float v = 3.5f + 3.0f * sinf((float)t * 3 + j * 0.45f) * sinf((float)t * 0.9f + j * 0.2f); if (v > eq[j]) eq[j] = v; eq[j] -= 28 * dt; if (eq[j] < 0) eq[j] = 0; }
@@ -45,7 +51,7 @@ int main(int argc, char** argv) {
       gameRender(G, A, fb, t);
       char path[512]; snprintf(path, sizeof path, "%s/frame_%05.1f.ppm", dir, times[ti]);
       writePpm(path, fb);
-      printf("t=%.1f ph=%d w=%.0f z=%.0f\n", t, (int)G.cl.ph, G.cl.w, G.cl.z);
+      printf("t=%.1f scene=%d ph=%d w=%.0f z=%.0f scroll=%.0f jump=%.2f\n", t, (int)G.scene, (int)G.cl.ph, G.cl.w, G.cl.z, G.bc.scroll, G.bc.jump);
       ti++;
     }
   }

@@ -19,6 +19,7 @@ namespace beatadv {
 struct AudioIn {
   bool beatNow = false, sounding = false;
   float T = 0.5f, level = 0, pulse = 0;
+  long beatN = 0;
   const float* eqH = nullptr;   // the 30 equalizer bars, 0..8
 };
 
@@ -34,7 +35,18 @@ static float T_deck(float w) { return w < 324 ? 40.0f : w < 440 ? 100.0f : w < 4
 enum ClPh : uint8_t { CL_WALK, CL_UP, CL_DOWN, CL_MOUNT, CL_LOOKWALK, CL_LOOK, CL_CROUCH, CL_LOWER, CL_TURN };
 struct Liner { float w = 0, z = 40, zT = 40, stepT = 0, mt = 0, q = 0; ClPh ph = CL_WALK; uint8_t stage = 0; };
 
-enum Scene : uint8_t { SC_LINER };
+// ---- Stage 2: the beach (the web demo's "jungle" with land = "open"): sand road, the liner leaving, driftwood logs and sea turtles to jump.
+constexpr float JD = 0.62f, JH = 28.0f;   // the jump's time and height
+enum ObKind : uint8_t { OB_LOG, OB_TURTLE };
+struct Obs { double arr = 0; float wx = 0; ObKind kind = OB_LOG; bool done = false, live = false; };
+struct Beach {
+  float scroll = 0, jump = -1, jd = JD, jh = JH;
+  Obs obs[6];
+  double lastArr = 0, nextGap = 0.78, shipStart = 0;
+  uint32_t rng = 2463534242u;
+};
+
+enum Scene : uint8_t { SC_LINER, SC_BEACH };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -43,11 +55,13 @@ struct Game {
   int fadeDir = 0, day = 1;
   double t0 = 0;
   Liner cl;
+  Beach bc;
 };
 
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
   if (s == SC_LINER) G.cl = Liner();
+  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.sl = 0; }
 }
 static void switchTo(Game& G, Scene s) { if (G.fadeDir) return; G.next = s; G.fadeDir = 1; G.fade = 0; }
 static void gameInit(Game& G, double now) { G = Game(); HC = HeroCtx(); setScene(G, SC_LINER, now); }
@@ -64,7 +78,7 @@ static void updateLiner(Game& G, const AudioIn& A, float dt, double now) {
       c.w += V * G.sp * (sl < 0 ? 1.3f : 1.0f) * dt; c.z = T_deck(c.w);
       if (c.stage == 0 && c.w >= UPX) { c.stage = 1; c.ph = CL_UP; c.w = UPX; c.zT = c.z; }
       else if (c.stage == 1 && c.w >= DNX) { c.mt = 0; c.w = 438; c.z = 100; c.stage = 2; c.ph = CL_CROUCH; }
-      else if (c.w >= CEND && !G.fadeDir) switchTo(G, SC_LINER);   // until the next stage is ported, the liner starts again
+      else if (c.w >= CEND && !G.fadeDir) switchTo(G, SC_BEACH);   // the gangway ends on the beach
       break;
     }
     case CL_LOOKWALK: { c.mt += dt; float q = sm01(cl01(c.mt / 0.35f)); c.w = UPX + 8 + 18 * q; if (q >= 1) { c.ph = CL_LOOK; c.mt = 0; } break; }
@@ -90,6 +104,37 @@ static void updateLiner(Game& G, const AudioIn& A, float dt, double now) {
   (void)now;
 }
 
+static inline float rand01(Game& G) { uint32_t x = G.bc.rng; x ^= x << 13; x ^= x >> 17; x ^= x << 5; G.bc.rng = x; return (x >> 8) * (1.0f / 16777216.0f); }
+static inline float obsX(const Beach& b, const Obs& o) { return HX + o.wx - b.scroll; }        // an obstacle stands at a place in the world and the ground carries it past
+static inline float obsTtl(const Beach& b, const Obs& o) { return (o.wx - b.scroll) / V; }     // seconds until it reaches the hero at full speed
+
+static void spawnBeach(Game& G, const AudioIn& A, double now) {   // called on a beat: put an obstacle that reaches the hero k beats from now
+  Beach& b = G.bc;
+  if (G.fadeDir || G.isQuiet || A.level < 0.06f) return;   // very quiet: nothing comes, the beach only waits (suspense)
+  const float T = A.T, need = (W + 18 - HX + 64) / V;
+  int k = (int)ceilf(need / T); if (k < 2) k = 2;
+  const double arr = now + k * T;
+  if (arr - b.lastArr < b.nextGap || ((A.beatN & 1) && A.level < 0.55f)) return;   // room between obstacles
+  b.lastArr = arr; b.nextGap = 3.5 + rand01(G) * 5.5;   // rare enough to matter: every 3.5 to 9 s
+  for (Obs& o : b.obs) if (!o.live) {
+    o.live = true; o.done = false; o.arr = arr; o.wx = b.scroll + (float)(arr - now) * V;
+    o.kind = rand01(G) < 0.25f ? OB_LOG : OB_TURTLE;
+    break;
+  }
+}
+
+static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
+  Beach& b = G.bc;
+  if (A.beatNow) spawnBeach(G, A, now);
+  b.scroll += V * G.sp * dt;
+  for (Obs& o : b.obs) if (o.live && obsX(b, o) < -40) o.live = false;
+  if (b.jump >= 0) { b.jump += dt; if (b.jump > b.jd) b.jump = -1; }
+  if (b.jump < 0) {   // hop what comes: he leaves the ground half a jump before it arrives, so he lands on the beat
+    for (Obs& o : b.obs) if (o.live && !o.done) { float t = obsTtl(b, o); if (t < JD / 2 && t > -0.1f) { b.jd = JD; b.jh = JH; b.jump = fmaxf(0, b.jd / 2 - t); o.done = true; break; } }
+  }
+  if (!G.fadeDir && now - b.shipStart >= 48) switchTo(G, SC_LINER);   // the liner has gone: until the forest is ported, the story starts again
+}
+
 // One frame of the game: the quiet detector, the sneak, the stride, then the stage and the fade between stages.
 static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   G.dt = dt;
@@ -101,6 +146,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   if (A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
   HC.ph -= floorf(HC.ph);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
+  else if (G.scene == SC_BEACH) updateBeach(G, A, dt, now);
   if (G.fadeDir) {
     G.fade += G.fadeDir * dt * 1.8f;
     if (G.fadeDir > 0 && G.fade >= 1) { setScene(G, G.next, now); G.fadeDir = -1; }
@@ -172,10 +218,102 @@ static void drawLiner(Game& G, const AudioIn& A, double now) {   // the opening:
   }
 }
 
+static inline double dmod(double v, double m) { return fmod(fmod(v, m) + m, m); }   // a modulo that stays positive (JavaScript's ((v % m) + m) % m)
+
+static void PA(float x, float y, int w, int h, int r, int g, int b, float a) { float keep = gAlpha; gAlpha = a * keep; R(x, y, w, h, rgb(r, g, b)); gAlpha = keep; }
+
+static void drawDepartingShip(const Beach& bc, double now, int horizon) {   // a large passenger ship leaves the hero on the beach, then slowly shrinks toward the horizon
+  const float elapsed = fmaxf(0, (float)(now - bc.shipStart)), away = cl01(elapsed / 48);
+  if (away >= 1) return;
+  const int x = rnd(92 + 105 * sm01(cl01(elapsed / 26)) + 28 * sm01(cl01((elapsed - 26) / 22)));
+  const float s = 1 - 0.94f * away;
+  gAlpha = 1 - cl01((away - 0.82f) / 0.18f);
+  auto P = [&](float dx, float dy, float w, float h, uint16_t col) { int pw = rnd(w * s), ph = rnd(h * s); R(x + dx * s, horizon + dy * s, pw < 1 ? 1 : pw, ph < 1 ? 1 : ph, col); };
+  auto Pa = [&](float dx, float dy, float w, float h, int r, int g, int b, float a) { float keep = gAlpha; gAlpha = a * keep; P(dx, dy, w, h, rgb(r, g, b)); gAlpha = keep; };
+  Pa(-47, 3, 12, 1, 255, 244, 220, 0.8f); Pa(-51, 5, 10, 1, 255, 244, 220, 0.55f);   // wake trailing behind the stern
+  P(-34, -5, 68, 7, rgb(45, 53, 82)); P(-30, 1, 58, 2, rgb(152, 51, 48)); P(30, -4, 4, 4, rgb(45, 53, 82));   // deep hull, red waterline and rising bow
+  P(-29, -16, 53, 11, rgb(248, 243, 223)); P(-23, -22, 36, 6, rgb(255, 250, 234)); P(9, -20, 15, 4, rgb(255, 250, 234));   // two passenger decks and bridge
+  P(-13, -28, 9, 6, rgb(210, 60, 40)); P(-12, -29, 7, 2, rgb(75, 58, 56)); P(3, -26, 7, 4, rgb(210, 60, 40));   // red funnels
+  for (int i = 0; i < 10; i++) P(-25 + i * 5, -12, 3, 3, rgb(39, 74, 100));
+  for (int i = 0; i < 6; i++) P(-18 + i * 5, -20, 3, 2, rgb(39, 74, 100));
+  for (int i = 0; i < 9; i++) P(-26 + i * 6, -2, 2, 1, rgb(255, 215, 125));   // cabin windows and lit portholes
+  gAlpha = 1;
+}
+
+static void drawOpenSky(const Beach& bc, const AudioIn& A, double now) {   // the beach: a sunset sky, departing liner, drifting wave crests, and far palms on the sand
+  const float sc = bc.scroll;
+  static const uint16_t bands[6] = {rgb(30, 94, 174), rgb(52, 128, 205), rgb(78, 161, 222), rgb(112, 191, 235), rgb(153, 211, 242), rgb(192, 228, 247)};
+  for (int i = 0; i < 6; i++) Ri(0, rnd((float)i * GY / 6), W, (int)ceilf(GY / 6.0f) + 1, bands[i]);
+  const int sr = 9 + rnd(A.pulse * 2);
+  fillA(150 - sr - 3, 56 - sr - 3, (sr + 3) * 2, (sr + 3) * 2, 255, 240, 170, 0.35f);   // the sun's glow
+  Ri(150 - sr + 2, 56 - sr + 2, (sr - 2) * 2, (sr - 2) * 2, rgb(255, 236, 160)); Ri(150 - sr + 4, 56 - sr, (sr - 4) * 2, sr * 2, rgb(255, 236, 160));
+  for (int i = 0; i < 5; i++) {   // clouds
+    int cx = rnd((float)(dmod(i * 71 - sc * 0.06 - now * 3, 330) - 40)), cy = 14 + (i * 23) % 40;
+    Ri(cx, cy, 26, 5, rgb(255, 255, 255)); Ri(cx + 5, cy - 3, 14, 3, rgb(255, 255, 255)); Ri(cx + 3, cy + 5, 20, 2, rgb(183, 215, 231));
+  }
+  const int SY = GY - 36;   // the horizon
+  static const uint16_t seaB[4] = {rgb(100, 178, 220), rgb(62, 143, 204), rgb(36, 107, 180), rgb(18, 75, 145)};
+  for (int i = 0; i < 4; i++) Ri(0, SY + i * 7, W, 8, seaB[i]);   // the sea, deeper toward the beach
+  for (int r = 0; r < 4; r++) for (int k = -1; k < 12; k++) {   // wave crests drift along, bigger in loud music
+    int x = rnd((float)(dmod(k * 31 + r * 17 - sc * (0.05 + r * 0.03) - now * (4 + r * 2), 372) - 30));
+    int y = SY + 3 + r * 7 + rnd(tsin(now * 2 + k + r) * (1 + 2 * A.level));
+    Ri(x, y, 7 + r * 2, 1, rgb(212, 241, 255));
+  }
+  if (A.pulse > 0.4f) for (int i = 0; i < 5; i++) Ri(120 + i * 17, SY + 2 + (i * 5) % 9, 1, 1, WHITE565);   // the sea glitters on the beat
+  drawDepartingShip(bc, now, SY);
+  Ri(0, GY - 8, W, 8, rgb(214, 170, 120)); Ri(0, GY - 8, W, 1, rgb(240, 200, 160));
+  for (int k = -1; k < 14; k++) {   // wet sand and the foam at the water's edge
+    int x = rnd((float)(dmod(k * 29 - sc * 0.3, 400) - 20)); float f = (tsin(now * 1.6 + k) + 1) * 1.2f;
+    PA((float)x, (float)(GY - 9 - rnd(f)), 12, 1, 255, 226, 200, 0.8f);
+  }
+  drawSurfEQ(A, GY - 7, 6);   // white-to-aqua sound bars rise from the shoreline like spray
+  for (int i = -1; i < 5; i++) {   // far palms on the sand, leaning a little, swaying with the bass
+    int x = rnd((float)(dmod(i * 83 - sc * 0.3, 330) - 40)), sw = rnd(tsin(now * 1.3 + i) * 1 + (A.eqH[0] + A.eqH[1] + A.eqH[2]) / 3 * 0.35f);
+    Ri(x + 8, GY - 30, 3, 28, rgb(70, 50, 40)); Ri(x + 9, GY - 22, 1, 1, rgb(90, 62, 36)); Ri(x + 9, GY - 14, 1, 1, rgb(90, 62, 36));
+    for (int d = -1; d <= 1; d += 2) { Ri(x + 9 + d * 4 + sw, GY - 33, 6, 2, rgb(20, 86, 58)); Ri(x + 9 + d * 9 + sw, GY - 31, 5, 2, rgb(40, 120, 70)); Ri(x + 9 + d * 12 + sw, GY - 29, 3, 2, rgb(20, 86, 58)); }
+    Ri(x + 5 + sw, GY - 36, 9, 3, rgb(40, 120, 70)); Ri(x + 8, GY - 29, 3, 3, rgb(110, 70, 30));   // coconuts under the crown
+  }
+}
+
+static void drawLog(float x, int y) {   // a fallen tree trunk lying along the path, seen from the side: rounded bark with streaks, a moss patch, a knot, and the sawn end toward him with its growth rings
+  const uint16_t bark = rgb(130, 80, 30), dk = rgb(60, 36, 18), tan = rgb(218, 176, 116), ring = rgb(150, 100, 56), moss = rgb(20, 130, 40);
+  R(x - 8, (float)y - 10, 17, 10, bark); R(x - 9, (float)y - 9, 19, 8, bark);   // a rounded body
+  R(x - 7, (float)y - 10, 15, 1, rgb(140, 92, 48)); R(x - 6, (float)y - 7, 12, 1, dk); R(x - 4, (float)y - 4, 13, 1, dk); R(x - 8, (float)y - 2, 11, 1, dk); R(x - 1, (float)y - 9, 1, 3, dk);   // bark streaks
+  R(x + 2, (float)y - 6, 3, 3, dk); R(x + 3, (float)y - 5, 1, 1, bark); R(x + 3, (float)y - 11, 5, 2, moss);   // a knot and moss
+  R(x - 12, (float)y - 9, 4, 8, tan); R(x - 13, (float)y - 8, 1, 6, tan); R(x - 11, (float)y - 7, 2, 4, ring); R(x - 10, (float)y - 6, 1, 2, tan);   // the sawn end, with its rings
+}
+static void drawBeachTurtle(float x, double now) {   // a small sea turtle crawling across the sand, head toward the approaching hero
+  const uint16_t shell = rgb(68, 102, 55), rim = rgb(42, 73, 47), plate = rgb(132, 150, 75), skin = rgb(87, 128, 77);
+  const int step = (int)((long)floor(now * 5 + x * 0.03) & 1);
+  PA(x - 13, GY - 1, 27, 1, 94, 68, 47, 0.35f);
+  R(x + 7, (float)(GY - 3 + step), 6, 3, skin); R(x - 8, (float)(GY - 3 + (1 - step)), 6, 3, skin); R(x + 11, GY - 5, 4, 2, skin);
+  R(x - 14, GY - 7, 7, 5, skin); R(x - 15, GY - 5, 3, 2, skin); R(x - 11, GY - 6, 1, 1, rgb(20, 30, 24));
+  R(x - 8, GY - 7, 18, 6, rim); R(x - 6, GY - 9, 14, 7, shell); R(x - 3, GY - 11, 8, 3, shell);
+  R(x - 4, GY - 8, 6, 3, plate); R(x + 4, GY - 7, 3, 2, plate); R(x - 7, GY - 5, 2, 2, plate);
+}
+
+static void drawBeach(Game& G, const AudioIn& A, double now) {
+  const Beach& b = G.bc;
+  const float sc = b.scroll;
+  drawOpenSky(b, A, now);
+  Ri(0, GY, W, 4, rgb(226, 184, 130)); Ri(0, GY + 4, W, H - GY - 4, rgb(190, 146, 100)); Ri(0, GY + 14, W, 12, rgb(162, 120, 82));   // on the beach the road is sand
+  for (int i = -1; i < 28; i++) {   // grass tufts, shells and darker patches, each fixed to the world, so that the ground is seen to move
+    int k = (int)floorf((sc - HX) / 9) + i; float x = HX + k * 9 - sc;
+    uint32_t hh = (uint32_t)k * 2654435761u; int a = (hh >> 8) % 5, bb = (hh >> 16) % 7;
+    if (a < 2) { uint16_t gc = rgb(150, 160, 70); R(x, GY - 2, 1, 2, gc); R(x + 2, GY - 3, 1, 3, gc); R(x + 4, GY - 2, 1, 2, gc); }
+    if (bb == 0) { R(x, GY + 7, 3, 2, rgb(250, 240, 230)); R(x + 1, GY + 7, 1, 1, rgb(240, 170, 160)); } else if (bb == 3) R(x + 1, GY + 11, 3, 2, rgb(170, 140, 90)); else if (bb == 5) R(x, GY + 5, 2, 1, rgb(190, 160, 108));
+  }
+  for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; if (o.kind == OB_LOG) drawLog(x, GY); else drawBeachTurtle(x, now); }
+  float y = GY; HeroMode mode = HM_RUN;
+  if (b.jump >= 0) { float u = b.jump / b.jd; y = GY - 4 * b.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; }
+  HC.slope = 0; HC.wob = 0;
+  drawHero(HX, (float)rnd(y), now, mode);
+}
+
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  drawLiner(G, A, now);
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else drawBeach(G, A, now);
   float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * 0.45f;   // the quieter it gets, the darker (less so at sea)
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
   if (G.visualDark > 0) fillA(0, 0, W, H, 0, 0, 12, G.visualDark);
@@ -184,6 +322,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { (void)G; return "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : "LINER"; }
 
 }  // namespace beatadv

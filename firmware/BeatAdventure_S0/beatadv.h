@@ -212,7 +212,7 @@ static void init(State& s, uint32_t nowMs) {
 }
 
 static AudioIn audioIn(const State& s) {
-  AudioIn a; a.beatNow = s.beatNow; a.sounding = s.sounding; a.T = s.T; a.level = s.level; a.pulse = s.pulse; a.eqH = s.eqH;
+  AudioIn a; a.beatNow = s.beatNow; a.sounding = s.sounding; a.T = s.T; a.level = s.level; a.pulse = s.pulse; a.eqH = s.eqH; a.beatN = s.beatN;
   return a;
 }
 

@@ -73,10 +73,23 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR };
+static float AIR_U = 0;   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
 
 static void drawHero(float x, float feetY, double now, HeroMode mode) {
   if (HC.hurt > 0 && ((int)floor(now * 20) & 1)) { R(x - 5, feetY - 24, 10, 24, WHITE565); return; }
+  if (mode == HM_AIR) {   // the jump: push off, the lead knee drives up and the other leg trails, arms thrown up, then the legs reach down for the landing
+    const float u = cl01(AIR_U), tuck = powf(sinf((float)M_PI * u), 0.8f), hx = x, lean = (6 + 10 * tuck) * DEG;
+    Leg L1 = legAF(hx, 0, 22 + 76 * tuck, 8 + 104 * tuck), L2 = legAF(hx, 0, -18 - 20 * tuck, 15 + 78 * tuck);
+    const float hy = feetY - fmaxf(L1.ay, L2.ay) - 1;
+    L1 = legAF(hx, hy, 22 + 76 * tuck, 8 + 104 * tuck); L2 = legAF(hx, hy, -18 - 20 * tuck, 15 + 78 * tuck);
+    const float sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+    drawLeg(L2, hx, hy, true); drawArm(sx, sy, (-100 - 20 * tuck) * DEG, 20 * DEG, true);
+    drawBody(hx, hy, lean); drawLeg(L1, hx, hy, false);
+    const float hold = sm01(cl01(u / 0.12f)) * (1 - sm01(cl01((u - 0.9f) / 0.1f)));   // the near hand goes up to hold the fedora in the air and lets go as he lands; the far arm trails behind
+    armTo(sx, sy, lp(sx + 3, sx + 2, hold), lp(sy + 7, sy - 4, hold), false);
+    return;
+  }
   const float hx = x, p = HC.ph;
   const bool idle = mode == HM_IDLE;
   const float breathe = sinf((float)(now * 2.2));

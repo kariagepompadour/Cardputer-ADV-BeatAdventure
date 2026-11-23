@@ -8,12 +8,14 @@ beats. The explorer plays by himself; you watch.
 
 [日本語](README_JA.md)
 
-## Status: stage B1, the first stage (the liner); not tried on a device yet
+## Status: stage B2, the liner and the beach; the beach is not tried on a device yet
 
 - The game screen shows the first stage of the web demo, **the liner**: the explorer climbs the left ladder (a rung on every beat; he clings and
   waits when the music goes quiet), looks out to sea from the bridge roof, crosses it, climbs down the right ladder and walks down the
-  gangway to the shore, with gulls, clouds and the 30-band equalizer as foam along the bottom. The picture follows the web demo's. It starts
-  again after the shore until the next stage (the beach) is ported. There is no text on the game screen while it plays (as in KeySpeaker); the `d` key shows the frames a second, the analysis and drawing
+  gangway to the shore, with gulls, clouds and the 30-band equalizer as foam along the bottom. The picture follows the web demo's. From the shore he steps onto
+  **the beach**: a sunset sky, the liner leaving and shrinking into the horizon, far palms, drifting wave crests, foam and the equalizer as
+  spray along the shore, a sand road, sea turtles and driftwood logs to jump (he holds his hat); after 48 seconds the story starts again
+  from the liner until the next stages (the forest) are ported. The monkey and the coconuts of the web demo's beach come next. There is no text on the game screen while it plays (as in KeySpeaker); the `d` key shows the frames a second, the analysis and drawing
   times, the beats a second, the stage, the day and the tempo, for checking on the device.
 - `firmware/BeatAdventure_S0/beatadv.h` is a C++ port of the web demo's beat tracker (`beat.js`) and of its sound analysis. On a
   computer it gives the same results as the web demo's own test (`host/run_tests.sh`; the output matches `node test/beat.test.js`
