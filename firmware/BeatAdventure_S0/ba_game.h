@@ -10,6 +10,7 @@
   The game reads the sound through AudioIn, which beatadv.h fills every frame; nothing here touches the sound itself.
 */
 #pragma once
+#include <string.h>
 #include "ba_gfx.h"
 #include "ba_hero.h"
 
@@ -242,9 +243,11 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
       n = n < b.trPrev - 2 ? b.trPrev - 2 : n > b.trPrev + 2 ? b.trPrev + 2 : n;
       b.tr[c & 127] = (int8_t)n; b.trPrev = n; b.trN++;
     }
+    G.sl += (fmaxf(-1.0f, fminf(1.0f, (gh(b, b.scroll + 4) - gh(b, b.scroll - 4)) / 8 / 0.5f)) - G.sl) * 0.2f;   // uphill he leans in and shortens his stride, downhill he leans back
+  }
+  if (b.forest) {   // passing a tree collects its apple like a Pac-Man dot (in both forests)
     int k = rnd((HX + 27 + b.scroll * 0.25f) / 47); float ax = k * 47 - b.scroll * 0.25f - 27;   // passing the tree collects its apple like a Pac-Man dot
     if (fabsf(ax - HX) < 3) { bool have = false; for (int i = 0; i < b.nApples; i++) if (b.apples[i] == k) have = true; if (!have) { if (b.nApples == 24) { memmove(b.apples, b.apples + 1, 23 * sizeof(int)); b.nApples--; } b.apples[b.nApples++] = k; } }
-    G.sl += (fmaxf(-1.0f, fminf(1.0f, (gh(b, b.scroll + 4) - gh(b, b.scroll - 4)) / 8 / 0.5f)) - G.sl) * 0.2f;   // uphill he leans in and shortens his stride, downhill he leans back
   }
   Hunter& hu = b.hunter;
   if (!hu.live && now >= b.nextHunter && !G.fadeDir && !G.hide && !b.swing.live) { hu = Hunter(); hu.live = true; hu.front = (++b.hunterN & 1) != 0; b.nextHunter = now + 17 + rand01(G) * 7; }
