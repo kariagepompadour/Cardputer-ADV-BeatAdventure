@@ -79,8 +79,9 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE };
-static float AIR_U = 0;   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING };
+static float AIR_U = 0;
+static float SWING_K = 0;   // how far along its arc the vine is, -1..1 (the web demo's S.swK)   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
 
 static void drawHero(float x, float feetY, double now, HeroMode mode) {
   if (HC.hurt > 0 && ((int)floor(now * 20) & 1)) { R(x - 5, feetY - 24, 10, 24, WHITE565); return; }
@@ -94,6 +95,15 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawBody(hx, hy, lean); drawLeg(L1, hx, hy, false);
     const float hold = sm01(cl01(u / 0.12f)) * (1 - sm01(cl01((u - 0.9f) / 0.1f)));   // the near hand goes up to hold the fedora in the air and lets go as he lands; the far arm trails behind
     armTo(sx, sy, lp(sx + 3, sx + 2, hold), lp(sy + 7, sy - 4, hold), false);
+    return;
+  }
+  if (mode == HM_SWING) {   // hanging from the vine with both hands above the head, the body trailing behind going up and swinging ahead coming down, the legs bent and lagging
+    const float sk = SWING_K, hx = x, lean = -sk * 10 * DEG;
+    const Leg L1 = legAF(hx, 0, 12 - 26 * sk, 22 + 12 * fabsf(sk));
+    const float hy = feetY - L1.ay - 1;
+    const Leg L2 = legAF(hx, hy, 0 - 26 * sk, 34 + 12 * fabsf(sk));
+    const float sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1, hxT = x + 3, hyT = feetY - 23;
+    drawLeg(L2, hx, hy, true); armTo(sx, sy, hxT - 1, hyT + 1, true); drawBody(hx, hy, lean); drawLeg(legAF(hx, hy, 12 - 26 * sk, 22 + 12 * fabsf(sk)), hx, hy, false); armTo(sx, sy, hxT, hyT, false);
     return;
   }
   if (mode == HM_HIDE) {   // crouched small behind the bush: knees up, back bent, head down, arms round the knees

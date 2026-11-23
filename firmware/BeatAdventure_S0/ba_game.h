@@ -70,7 +70,11 @@ struct Wall {
 };
 enum { LH_ = 0, RH_ = 1, LF_ = 2, RF_ = 3 };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_COUNT };
+// ---- Stage 5: the vines (the web demo's "vines"): the trail ends at a ravine and hanging vines carry him across.
+constexpr float TARZAN_STEP = 5, TARZAN_TOTAL = TARZAN_STEP * 3;
+struct Vines { float t = 0; };
+
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_COUNT };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -83,12 +87,14 @@ struct Game {
   Beach bc;
   Mtn mt;
   Wall wl;
+  Vines vn;
 };
 
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
   if (s == SC_LINER) G.cl = Liner();
   if (s == SC_WALL) G.wl = Wall();
+  if (s == SC_VINES) G.vn = Vines();
   if (s == SC_BEACH || s == SC_FOREST) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static inline bool onLand(const Game& G) { return G.scene == SC_BEACH || G.scene == SC_FOREST; }
@@ -255,7 +261,7 @@ static void updateWall(Game& G, const AudioIn& A, float dt, double now) {
     } else if (c.tt >= 1.2f) { c.phase = WP_EXIT; c.tt = 0; c.x = 100; }
   } else if (c.phase == WP_EXIT) {
     c.x += V * G.sp * dt;
-    if (c.x >= W + 12 && !G.fadeDir) switchTo(G, SC_LINER);   // the vine ravine comes next in the web demo; until it is ported, the story starts again
+    if (c.x >= W + 12 && !G.fadeDir) switchTo(G, SC_VINES);   // over the top, to the vine ravine
   }
   c.z = (c.L[LH_].h + c.L[RH_].h + c.L[LF_].h + c.L[RF_].h) / 4 - 2.5f;
   if (c.phase == WP_UP) c.x = 91;
@@ -281,6 +287,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   updateMountains(G, A, now);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
   else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
+  else if (G.scene == SC_VINES) { G.vn.t = fminf(TARZAN_TOTAL, G.vn.t + dt); if (G.vn.t >= TARZAN_TOTAL && !G.fadeDir) switchTo(G, SC_LINER); }   // the boat and the falls come next in the web demo; until they are ported, the story starts again
   else updateBeach(G, A, dt, now);
   if (G.fadeDir) {
     G.fade += G.fadeDir * dt * 1.8f;
@@ -651,6 +658,34 @@ static void drawWall(const Game& G, const AudioIn& A, double now) {   // the lan
   drawLadderHero(91, 40 + c.z, 1);   // body stays outside the wall; hands meet the rock at x=96
 }
 
+static void drawVines(const Game& G, double now) {   // a sunlit break in the mountain forest: the trail ends at a ravine and hanging vines carry him across
+  const float t = G.vn.t;
+  const uint16_t sky[4] = {rgb(39, 113, 190), rgb(72, 153, 214), rgb(120, 190, 229), rgb(174, 216, 238)};
+  const uint16_t DIRT = rgb(110, 70, 30), DIRT2 = rgb(70, 44, 20), GRASS = rgb(40, 170, 50);
+  for (int i = 0; i < 4; i++) R(0, i * 24, W, 25, sky[i]);
+  for (int i = 0; i < 4; i++) { int x = rnd((float)(dmod(i * 83 - t * 4, 330) - 30)), y = 13 + i * 12; R(x, y, 25, 3, WHITE565); R(x + 6, y - 3, 12, 3, WHITE565); }
+  for (int x = 0; x < W; x += 4) { int far = 78 + rnd(7 * sinf((x + t * 5) * 0.025f) + 3 * sinf(x * 0.08f)); R(x, far, 4, H - far, rgb(74, 135, 135)); int nr = 96 + rnd(8 * sinf((x + t * 11) * 0.035f)); R(x, nr, 4, H - nr, rgb(35, 85, 86)); }
+  R(0, 115, W, 20, rgb(17, 50, 68));
+  const int edgeL = rnd(105 - t * 45), edgeR = rnd(240 - fmaxf(0.0f, t - 12) * 42);
+  if (edgeL > 0) { R(0, 88, edgeL, H - 88, DIRT); R(0, 86, edgeL, 3, GRASS); R(fmaxf(0.0f, (float)(edgeL - 5)), 88, 5, H - 88, DIRT2); }
+  if (t > 12) { R(edgeR, 88, W - edgeR, H - 88, DIRT); R(edgeR, 86, W - edgeR, 3, GRASS); R(edgeR, 88, 5, H - 88, DIRT2); }
+  const int vines[3] = {46, 120, 194}; const int step = (int)fminf(2.0f, floorf(t / TARZAN_STEP));
+  const float u = fminf(1.0f, (t - step * TARZAN_STEP) / TARZAN_STEP); const bool onVine = u < 0.76f;
+  const float swing = sm01(cl01(u / 0.76f)), leap = cl01((u - 0.76f) / 0.24f);
+  const float nextX = step < 2 ? vines[step + 1] - 22.0f : 235.0f;
+  const float handX = onVine ? vines[step] - 22 + 44 * swing : lp(vines[step] + 22, nextX, leap);
+  const float handY = onVine ? 57 - rnd(8 * sinf(swing * (float)M_PI)) : (float)rnd((step == 2 ? lp(57, 63, leap) : 57.0f) - 12 * sinf(leap * (float)M_PI));
+  for (int i = 0; i < 3; i++) {
+    const int ax = vines[i]; const bool grip = (onVine && i == step) || (!onVine && step < 2 && leap > 0.78f && i == step + 1);
+    const float bx = grip ? handX : ax + rnd(tsin(now * 1.3 + i * 0.7) * 16), by = grip ? handY : 60.0f;
+    R(ax - 8, 0, 16, 5, rgb(27, 104, 49)); seg((float)ax, 3, bx, by, rgb(32, 153, 67), 2);
+    for (int y = 12; y < 51; y += 13) R((float)rnd(lp((float)ax, bx, y / by)) + (i & 1 ? 1 : -4), y, 5, 2, rgb(61, 183, 78));
+  }
+  HC.slope = 0; HC.wob = 0;
+  if (onVine || (step < 2 && leap > 0.78f)) { SWING_K = onVine ? 2 * swing - 1 : -1; drawHero((float)rnd(handX), handY + 23, now, HM_SWING); }
+  else { AIR_U = 0; drawHero((float)rnd(handX), handY + 23, now, HM_AIR); }
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -682,7 +717,7 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
   float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * 0.45f;   // the quieter it gets, the darker (less so at sea)
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
   if (G.visualDark > 0) fillA(0, 0, W, H, 0, 0, 12, G.visualDark);
@@ -691,6 +726,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : "LINER"; }
 
 }  // namespace beatadv
