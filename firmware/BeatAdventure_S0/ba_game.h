@@ -39,11 +39,13 @@ struct Liner { float w = 0, z = 40, zT = 40, stepT = 0, mt = 0, q = 0; ClPh ph =
 constexpr float JD = 0.62f, JH = 28.0f;   // the jump's time and height
 enum ObKind : uint8_t { OB_LOG, OB_TURTLE, OB_NUT };
 struct Obs { double arr = 0, born = 0; float wx = 0, Tf = 0.7f, xw0 = 0, y0 = 0; ObKind kind = OB_LOG; bool done = false, live = false; };
+struct Bat { float x = 0, y = 0, y0 = 0, t = 0; bool live = false; };   // the bat of every old game
 struct Tree { float wx = 0; int throws = 0; double throwAt = -9; bool live = false; };   // a palm with a monkey on it
 struct Beach {
   float scroll = 0, jump = -1, jd = JD, jh = JH;
   Obs obs[6];
   Tree tree;
+  Bat bat;
   double lastArr = 0, nextGap = 0.78, shipStart = 0, nextTree = 0;
   uint32_t rng = 2463534242u;
 };
@@ -53,6 +55,7 @@ enum Scene : uint8_t { SC_LINER, SC_BEACH };
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
   bool isQuiet = false;
+  float quietT = 0, hideT = 0; bool hide = false;
   float sneak = 0, sp = 1, fade = 0, visualDark = -1, sl = 0, dt = 0.033f;
   int fadeDir = 0, day = 1;
   double t0 = 0;
@@ -63,7 +66,7 @@ struct Game {
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
   if (s == SC_LINER) G.cl = Liner();
-  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.sl = 0; }
+  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static void switchTo(Game& G, Scene s) { if (G.fadeDir) return; G.next = s; G.fadeDir = 1; G.fade = 0; }
 static void gameInit(Game& G, double now) { G = Game(); HC = HeroCtx(); setScene(G, SC_LINER, now); }
@@ -132,10 +135,13 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
   if (A.beatNow) spawnBeach(G, A, now);
   // a palm with a monkey now and then; he throws a coconut ahead of the hero, and it lands and lies there like a log
   Tree& t = b.tree;
-  if (!t.live && A.sounding && !G.fadeDir && now > b.nextTree) { t = Tree(); t.live = true; t.wx = b.scroll + W - HX + 24; b.nextTree = now + 7 + rand01(G) * 5; }
+  Bat& bt = b.bat;
+  if (A.beatNow && A.sounding && !G.fadeDir && !bt.live && A.level > 0.25f && rand01(G) < 0.1f) { bt = Bat(); bt.live = true; bt.x = W + 8; bt.y = bt.y0 = 38; }
+  if (bt.live) { bt.t += dt; bt.x -= (62 + V * G.sp * 0.3f) * dt; float u = bt.t * 1.7f; bt.y = bt.y0 + (fabsf(u - floorf(u) - 0.5f) * 4 - 1) * 12; if (bt.x <= -10) bt.live = false; }   // a triangle wave: straight zigs and zags
+  if (!t.live && !G.hide && A.sounding && !G.fadeDir && now > b.nextTree) { t = Tree(); t.live = true; t.wx = b.scroll + W - HX + 24; b.nextTree = now + 7 + rand01(G) * 5; }
   if (t.live) {
     float sx = HX + t.wx - b.scroll;
-    if (A.beatNow && t.throws < 2 && sx < 214 && sx > 100 && !G.isQuiet && G.sp > 0.7f && now - t.throwAt > 1.2) {
+    if (A.beatNow && t.throws < 2 && sx < 214 && sx > 100 && !G.isQuiet && !G.hide && G.sp > 0.7f && now - t.throwAt > 1.2) {
       const float Tf = 0.7f, wx = b.scroll + V * Tf + 100;
       bool room = true; for (const Obs& o : b.obs) if (o.live && fabsf(o.wx - wx) <= 150) room = false;
       if (room) for (Obs& o : b.obs) if (!o.live) {
@@ -159,10 +165,16 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   G.dt = dt;
   G.isQuiet = A.sounding && (G.isQuiet ? A.level < 0.38f : A.level < 0.27f);
   G.sneak += (((G.isQuiet || !A.sounding) ? 1.0f : 0.0f) - G.sneak) * fminf(1.0f, dt * 2);
-  G.sp = 1 - 0.4f * G.sneak;
+  G.quietT = G.isQuiet ? G.quietT + dt : fminf(0.0f, G.quietT + dt);   // seconds of quiet; after a hide it counts up from negative (a rest)
+  if (G.scene == SC_BEACH && !G.hide && !G.fadeDir && G.quietT > 5 && G.bc.jump < 0) {   // quiet for long: he hides behind a bush, unless something is about to reach him
+    bool near = false; for (const Obs& o : G.bc.obs) if (o.live) { float x = obsX(G.bc, o); if (x > HX - 14 && x < HX + 110) near = true; }
+    if (!near) { G.hide = true; G.hideT = 0; }
+  }
+  if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
+  G.sp = G.hide ? 0.0f : 1 - 0.4f * G.sneak;
   HC.sneak = G.sneak;
-  HC.ph += dt * G.sp / (A.sounding ? A.T : 0.6f);   // the stride follows the beat: the left foot lands on it
-  if (A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
+  if (!G.hide) HC.ph += dt * G.sp / (A.sounding ? A.T : 0.6f);   // the stride follows the beat: the left foot lands on it
+  if (!G.hide && A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
   HC.ph -= floorf(HC.ph);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
   else if (G.scene == SC_BEACH) updateBeach(G, A, dt, now);
@@ -331,6 +343,26 @@ static void drawNut(const Obs& o, float x, const Beach& b, double now) {
   else { R(x - 3, GY - 6, 6, 6, CT); R(x - 2, GY - 5, 2, 2, D2); R(x - 1, GY - 7, 2, 1, CT); }
 }
 
+static void drawJaguar(float x, double now) {   // something big and quiet passing behind the bush: a dark cat with yellow eyes, legs padding
+  const uint16_t K = rgb(14, 12, 18), GOLD = rgb(255, 210, 60); const float w = (float)fmod(now * 9, 6.283185307179586);
+  for (int i = 0; i < 4; i++) { float lx = x - 8 + (i >> 1) * 15 + (i & 1) * 3; int o = rnd(sinf(w + i * 1.6f) * 2); R(lx + o, GY - 5, 2, 5, K); }
+  R(x - 11, GY - 12, 24, 8, K); R(x - 18, GY - 14, 8, 7, K); R(x - 17, GY - 16, 2, 2, K); R(x - 12, GY - 16, 2, 2, K);
+  seg(x + 12, GY - 11, x + 19, GY - 15, K, 2); seg(x + 19, GY - 15, x + 21, GY - 11, K, 2);
+  R(x - 17, GY - 12, 2, 2, GOLD); R(x - 13, GY - 12, 2, 2, GOLD);
+}
+static void drawBush(float x, float u) {   // the bush the hero hides behind, grown from the ground by u (0..1)
+  const uint16_t LEAF = rgb(10, 90, 30), LEAF2 = rgb(20, 130, 40);
+  const int h = rnd(15 * u); if (h < 1) return;
+  for (int i = 0; i < 6; i++) { int bx = rnd(x - 12 + i * 4), bh = (int)(h - (i % 2) * 3 - fabsf(i - 2.5f) * 1.2f); if (bh > 0) { Ri(bx, GY - bh, 5, bh, LEAF); Ri(bx, GY - bh, 5, 2, LEAF2); } }
+  Ri(rnd(x - 10), GY - 2, 20, 2, LEAF);
+}
+static void drawBat(const Bat& b, const AudioIn& A) {
+  const int x = rnd(b.x), y = rnd(b.y), f = (int)floorf(b.t / (A.T / 4)) & 1; const uint16_t c = rgb(90, 50, 120), GOLD = rgb(255, 210, 60);
+  Ri(x - 1, y, 4, 3, c); Ri(x, y, 1, 1, GOLD); Ri(x + 2, y, 1, 1, GOLD); Ri(x - 1, y - 2, 1, 2, c); Ri(x + 2, y - 2, 1, 2, c);
+  if (f) { Ri(x - 5, y - 2, 4, 1, c); Ri(x - 7, y - 3, 2, 1, c); Ri(x + 3, y - 2, 4, 1, c); Ri(x + 7, y - 3, 2, 1, c); }
+  else { Ri(x - 5, y + 2, 4, 1, c); Ri(x - 7, y + 3, 2, 1, c); Ri(x + 3, y + 2, 4, 1, c); Ri(x + 7, y + 3, 2, 1, c); }
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -344,10 +376,13 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
   }
   if (b.tree.live) drawTree(b.tree, b, A, now);
   for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; if (o.kind == OB_LOG) drawLog(x, GY); else if (o.kind == OB_NUT) drawNut(o, x, b, now); else drawBeachTurtle(x, now); }
-  float y = GY; HeroMode mode = HM_RUN;
+  if (G.hide && G.hideT > 0.8f) drawJaguar(W + 30 - (G.hideT - 0.8f) * 75, now);
+  float y = GY; HeroMode mode = G.hide ? (G.hideT < 5.0f ? HM_HIDE : HM_IDLE) : HM_RUN;
   if (b.jump >= 0) { float u = b.jump / b.jd; y = GY - 4 * b.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; }
   HC.slope = 0; HC.wob = 0;
   drawHero(HX, (float)rnd(y), now, mode);
+  if (G.hide) drawBush(HX + 2, fminf(1.0f, G.hideT / 0.6f) * (G.hideT > 5.0f ? fmaxf(0.0f, 1 - (G.hideT - 5.0f) / 0.8f) : 1.0f));
+  if (b.bat.live) drawBat(b.bat, A);
 }
 
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.

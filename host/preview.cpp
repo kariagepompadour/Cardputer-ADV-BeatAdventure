@@ -26,8 +26,9 @@ int main(int argc, char** argv) {
   if (argc < 3) { fprintf(stderr, "usage: preview OUTDIR t0 t1 ...\n"); return 2; }
   const char* dir = argv[1];
   std::vector<double> times;
-  int startScene = -1;
+  int startScene = -1; double quietFrom = -1;
   for (int i = 2; i < argc; i++) {
+    if (!strcmp(argv[i], "--quiet") && i + 1 < argc) { quietFrom = atof(argv[++i]); continue; }   // the music goes quiet from this time on
     if (!strcmp(argv[i], "--scene") && i + 1 < argc) { startScene = atoi(argv[++i]); continue; }
     times.push_back(atof(argv[i]));
   }
@@ -45,6 +46,7 @@ int main(int argc, char** argv) {
     A.beatN = (long)nbeat;
     A.pulse *= powf(0.9f, 60 * dt);
     A.level = 0.62f + 0.3f * sinf((float)t * 0.7f);
+    if (quietFrom >= 0 && t >= quietFrom) A.level = 0.12f;
     for (int j = 0; j < 30; j++) { float v = 3.5f + 3.0f * sinf((float)t * 3 + j * 0.45f) * sinf((float)t * 0.9f + j * 0.2f); if (v > eq[j]) eq[j] = v; eq[j] -= 28 * dt; if (eq[j] < 0) eq[j] = 0; }
     gameUpdate(G, A, dt, t);
     if (t + dt / 2 >= times[ti]) {

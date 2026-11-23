@@ -73,7 +73,7 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE };
 static float AIR_U = 0;   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
 
 static void drawHero(float x, float feetY, double now, HeroMode mode) {
@@ -88,6 +88,17 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawBody(hx, hy, lean); drawLeg(L1, hx, hy, false);
     const float hold = sm01(cl01(u / 0.12f)) * (1 - sm01(cl01((u - 0.9f) / 0.1f)));   // the near hand goes up to hold the fedora in the air and lets go as he lands; the far arm trails behind
     armTo(sx, sy, lp(sx + 3, sx + 2, hold), lp(sy + 7, sy - 4, hold), false);
+    return;
+  }
+  if (mode == HM_HIDE) {   // crouched small behind the bush: knees up, back bent, head down, arms round the knees
+    const float hx = x, lean = 52 * DEG;
+    const Leg L1 = legAF(hx, 0, 68, 128);
+    const float hyy = feetY - L1.ay - 1;
+    const Leg A = legAF(hx, hyy, 68, 128), B = legAF(hx - 1, hyy, 62, 122);
+    drawLeg(B, hx - 1, hyy, true);
+    const float sx = hx + TORSO_L * sinf(lean), sy = hyy - TORSO_L * cosf(lean);
+    drawBody(hx, hyy, lean, 2); drawLeg(A, hx, hyy, false);
+    seg(sx, sy + 1, A.kx - 1, A.ky - 1, P_G, 2); seg(A.kx - 1, A.ky - 1, A.kx + 1, A.ky + 1, P_S, 2);
     return;
   }
   const float hx = x, p = HC.ph;
