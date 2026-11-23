@@ -79,7 +79,8 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH };
+static float FIND_T = 0, HERO_PULSE = 0;   // seconds since he stopped at the treasure (the web demo's S.fnd), and the beat's pulse
 static float AIR_U = 0;
 static float SWING_K = 0;   // how far along its arc the vine is, -1..1 (the web demo's S.swK)   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
 
@@ -95,6 +96,22 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawBody(hx, hy, lean); drawLeg(L1, hx, hy, false);
     const float hold = sm01(cl01(u / 0.12f)) * (1 - sm01(cl01((u - 0.9f) / 0.1f)));   // the near hand goes up to hold the fedora in the air and lets go as he lands; the far arm trails behind
     armTo(sx, sy, lp(sx + 3, sx + 2, hold), lp(sy + 7, sy - 4, hold), false);
+    return;
+  }
+  if (mode == HM_FIND) {   // a discovery: he freezes and clutches his hat, then reaches for the idol, then lifts it high with both hands while the music celebrates
+    const float t = FIND_T, hx = x, hy = feetY - legAF(hx, 0, 4, 3).ay - 1, reach = sm01(cl01((t - 0.9f) / 0.8f)), up = sm01(cl01((t - 1.7f) / 0.5f)), lean = (2 + 8 * reach * (1 - up)) * DEG;
+    const float sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1, bob = up * (tsin(now * 7) * 1 - HERO_PULSE * 2);
+    drawLeg(legAF(hx, hy, -4, 3), hx, hy, true);
+    armTo(sx, sy, lp(sx - 1, hx - 1, up), lp(sy + 8, feetY - 29 + bob, up), true);
+    drawBody(hx, hy, lean);
+    drawLeg(legAF(hx, hy, 4, 3), hx, hy, false);
+    armTo(sx, sy, lp(lp(sx + 3, hx + 15, reach), hx + 3, up), lp(lp(sy - 9, feetY - 29, reach), feetY - 30 + bob, up), false);
+    return;
+  }
+  if (mode == HM_PUSH) {   // pushing something heavy with his whole body: leaning hard into it, both arms straight out against it, the back leg driving, the front knee bent
+    const float sh = tsin(now * 5) * 3, hx = x; const Leg Lb = legAF(hx, 0, -34, 8), Lf = legAF(hx, 0, 36, 68);
+    const float hy = feetY - fmaxf(Lb.ay, Lf.ay) - 1, lean = 32 * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+    drawLeg(legAF(hx, hy, 36 + sh, 68), hx, hy, true); armTo(sx, sy, sx + 8, sy + 2, true); drawBody(hx, hy, lean); drawLeg(legAF(hx, hy, -34 - sh, 8), hx, hy, false); armTo(sx, sy, sx + 8, sy + 5, false);
     return;
   }
   if (mode == HM_SWIM) {   // side view crawl: the arms take turns, bent and lifted out of the water on the recovery, long and pulling underneath; the legs flutter

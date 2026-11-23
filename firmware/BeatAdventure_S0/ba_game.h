@@ -41,6 +41,7 @@ enum ObKind : uint8_t { OB_LOG, OB_TURTLE, OB_NUT, OB_TIGER, OB_BEAR, OB_POND };
 struct Obs { double arr = 0, born = 0; float wx = 0, Tf = 0.7f, xw0 = 0, y0 = 0, hw = 14; ObKind kind = OB_LOG; bool done = false, live = false, wide = false, pulse = false, hasCroc = false; };
 struct Hunter { float t = 0; bool live = false, front = false, dodged = false; };   // a masked spear-carrier that appears ahead or behind, then loses the faster, leaping hero
 struct Bat { float x = 0, y = 0, y0 = 0, t = 0; bool live = false; };   // the bat of every old game
+struct Relic { bool live = false, taken = false, clue = false; float wx = 0, shift = 0; };   // the pedestal with the golden mask, in the flat forest
 struct Tree { float wx = 0; int throws = 0; double throwAt = -9; bool live = false; };   // a palm with a monkey on it
 struct Beach {
   float scroll = 0, jump = -1, jd = JD, jh = JH;
@@ -50,6 +51,7 @@ struct Beach {
   bool forest = false;                  // the forest (the web demo's land = "forest", hills): the ground is the volume
   int8_t tr[128] = {}; int trN = 0, trPrev = 0;   // the terrain: block heights per column, the newest 80 kept
   int apples[24] = {}; int nApples = 0;           // trunks whose apple has been taken
+  Relic rel; struct { bool live = false; float t = 0; } find, fall; double nextRelic = -1; int relics = 0;
   Tree tree;
   Bat bat;
   Hunter hunter; int hunterN = 0; double nextHunter = 0;
@@ -190,7 +192,7 @@ static inline int ghr(const Beach& b, float w) { return rnd(gh(b, w)); }
 
 static void spawnBeach(Game& G, const AudioIn& A, double now) {   // called on a beat: put an obstacle that reaches the hero k beats from now
   Beach& b = G.bc;
-  if (G.fadeDir || G.isQuiet || A.level < 0.06f) return;   // very quiet: nothing comes, the beach only waits (suspense)
+  if (G.fadeDir || G.isQuiet || b.rel.live || b.find.live || b.fall.live || A.level < 0.06f) return;   // very quiet: nothing comes, the beach only waits (suspense)
   const float T = A.T, need = (W + 18 - HX + 64) / V;
   int k = (int)ceilf(need / T); if (k < 2) k = 2;
   const double arr = now + k * T;
@@ -249,8 +251,24 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
     int k = rnd((HX + 27 + b.scroll * 0.25f) / 47); float ax = k * 47 - b.scroll * 0.25f - 27;   // passing the tree collects its apple like a Pac-Man dot
     if (fabsf(ax - HX) < 3) { bool have = false; for (int i = 0; i < b.nApples; i++) if (b.apples[i] == k) have = true; if (!have) { if (b.nApples == 24) { memmove(b.apples, b.apples + 1, 23 * sizeof(int)); b.nApples--; } b.apples[b.nApples++] = k; } }
   }
+  if (b.forest && !b.hills) {   // treasure: now and then a pedestal with a golden idol stands in the road; he stops, finds it, lifts it high, and the music celebrates; the pedestal slides away and shows a hidden shaft
+    if (b.nextRelic < 0) b.nextRelic = now + 12 + rand01(G) * 18;
+    if (((A.beatNow && A.sounding && !G.isQuiet && A.level > 0.3f) || (!A.sounding && now - G.t0 >= 100)) && now > b.nextRelic && now - G.t0 >= 82 && !b.find.live && !G.hide && !G.fadeDir && !b.swing.live && !b.rel.live) {
+      const float wx = b.scroll + W - HX + 30; bool clear = true; for (const Obs& o : b.obs) if (o.live && fabsf(o.wx - wx) <= 170) clear = false;
+      if (clear) { b.rel = Relic(); b.rel.live = true; b.rel.wx = wx; double arr = now + (wx - b.scroll) / V + 1; if (arr > b.lastArr) b.lastArr = arr; b.nextGap = 4; b.nextRelic = now + 45 + rand01(G) * 45; }
+    }
+    if (b.fall.live) { b.fall.t += dt; if (b.fall.t > 0.55f && !G.fadeDir) switchTo(G, SC_LINER); }   // the revealed shaft leads straight into the brick tunnel in the web demo; until it is ported, the story starts again
+    if (!b.find.live && !b.fall.live && b.jump < 0 && !b.swing.live && !G.fadeDir && b.rel.live && !b.rel.taken && b.rel.wx - b.scroll <= 16) { b.find.live = true; b.find.t = 0; }
+    if (b.find.live) {
+      Relic& r = b.rel; b.find.t += dt; const float ft = b.find.t;
+      if (ft >= 1.7f && !r.taken) { r.taken = true; b.relics++; }
+      r.clue = ft >= 2.4f && ft < 3.2f; r.shift = r.clue ? (float)((int)floorf(ft * 12) & 1) : (float)rnd(32 * sm01(cl01((ft - 3.2f) / 1.5f)));
+      if (ft > 4.9f) { b.fall.live = true; b.fall.t = 0; b.find.live = false; }   // take the mask, notice the inlay, push the pedestal, then enter the hidden shaft
+    }
+    if (b.rel.live && HX + b.rel.wx - b.scroll <= -30) b.rel.live = false;
+  }
   Hunter& hu = b.hunter;
-  if (!hu.live && now >= b.nextHunter && !G.fadeDir && !G.hide && !b.swing.live) { hu = Hunter(); hu.live = true; hu.front = (++b.hunterN & 1) != 0; b.nextHunter = now + 17 + rand01(G) * 7; }
+  if (!hu.live && now >= b.nextHunter && !G.fadeDir && !G.hide && !b.swing.live && !b.find.live && !b.fall.live && !b.rel.live) { hu = Hunter(); hu.live = true; hu.front = (++b.hunterN & 1) != 0; b.nextHunter = now + 17 + rand01(G) * 7; }
   if (hu.live) {
     hu.t += dt;
     if (!hu.dodged && hu.t >= (hu.front ? 2.4f : 1.5f)) { hu.dodged = true; if (b.jump < 0 && !G.hide) { b.jump = 0; b.jd = JD; b.jh = JH; } }   // the hero leaps and leaves him behind
@@ -339,12 +357,12 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   G.isQuiet = A.sounding && (G.isQuiet ? A.level < 0.38f : A.level < 0.27f);
   G.sneak += (((G.isQuiet || !A.sounding) ? 1.0f : 0.0f) - G.sneak) * fminf(1.0f, dt * 2);
   G.quietT = G.isQuiet ? G.quietT + dt : fminf(0.0f, G.quietT + dt);   // seconds of quiet; after a hide it counts up from negative (a rest)
-  if (onLand(G) && !G.hide && !G.fadeDir && G.quietT > 5 && G.bc.jump < 0) {   // quiet for long: he hides behind a bush, unless something is about to reach him
+  if (onLand(G) && !G.hide && !G.fadeDir && !G.bc.find.live && G.quietT > 5 && G.bc.jump < 0) {   // quiet for long: he hides behind a bush, unless something is about to reach him
     bool near = false; for (const Obs& o : G.bc.obs) if (o.live) { float x = obsX(G.bc, o); if (x > HX - 14 && x < HX + 110) near = true; }
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = (G.hide ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live))) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
   HC.sneak = G.sneak;
   if (!G.hide) HC.ph += dt * G.sp / (A.sounding ? A.T : 0.6f);   // the stride follows the beat: the left foot lands on it
   if (!G.hide && A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
@@ -945,6 +963,27 @@ static void drawPond(const Obs& o, float x, double now, float tt) {
   if (o.wide) { drawCrocHead(x - 14, GY, now, tt); drawCrocHead(x + 16, GY, now, tt + 0.12f); } else if (o.hasCroc) drawCrocHead(x + 2, GY, now, tt);
 }
 
+static void drawIdol(float x, float by, double now, bool big) {   // an Aztec treasure standing on y = by: a gold mask with turquoise eyes and ear spools under a fan of quetzal feathers; big: held overhead, with rays that pulse on the beat
+  const uint16_t G1 = rgb(252, 208, 64), G2 = rgb(176, 124, 24), TQ = rgb(40, 200, 190), GR = rgb(30, 170, 80), RD = rgb(214, 50, 40), DK = rgb(60, 36, 8);
+  if (big) { const int r = 8 + rnd(HERO_PULSE * 4); PA(x - r, by - 9 - r, r * 2, r * 2, 255, 220, 90, 0.18f); for (int i = 0; i < 8; i++) { float a = i * (float)M_PI / 4 + (float)fmod(now * 1.5, 6.283185307179586); R(x + cosf(a) * (r + 3), by - 9 + sinf(a) * (r + 3), 1, 1, i & 1 ? WHITE565 : G1); } }
+  R(x - 5, by - 12, 2, 4, GR); R(x - 3, by - 14, 2, 6, TQ); R(x - 1, by - 15, 3, 7, RD); R(x + 2, by - 14, 2, 6, TQ); R(x + 4, by - 12, 2, 4, GR);   // the fan of quetzal feathers
+  R(x - 3, by - 9, 7, 8, G1); R(x - 3, by - 9, 7, 1, G2); R(x - 5, by - 7, 2, 3, TQ); R(x + 4, by - 7, 2, 3, TQ);   // the gold face and the turquoise ear spools
+  R(x - 2, by - 7, 2, 2, TQ); R(x + 1, by - 7, 2, 2, TQ); R(x - 2, by - 7, 1, 1, DK); R(x + 2, by - 7, 1, 1, DK); R(x, by - 5, 1, 2, G2); R(x - 2, by - 3, 5, 1, DK); R(x - 1, by - 3, 1, 1, WHITE565); R(x + 1, by - 3, 1, 1, WHITE565); R(x - 2, by - 1, 5, 1, G2);
+}
+static void drawRelic(float x, double now, bool taken, bool clue) {   // a person-high stepped stone altar; the golden mask rests on top until taken
+  const uint16_t S1 = rgb(120, 112, 100), S2 = rgb(160, 150, 134), TQ = rgb(40, 200, 190), DK = rgb(70, 64, 56);
+  static const int ST[5][3] = {{30, 4, 4}, {26, 5, 9}, {22, 6, 15}, {18, 7, 22}, {14, 4, 26}};
+  for (const auto& e : ST) { R(x - e[0] / 2.0f, GY - e[2], e[0], e[1], S1); R(x - e[0] / 2.0f, GY - e[2], e[0], 1, S2); }
+  for (int i = 0; i < 6; i++) { R(x - 13 + i * 5, GY - 3, 3, 1, DK); R(x - 12 + i * 5, GY - 2, 1, 2, DK); }   // the fret band
+  R(x - 2, GY - 14, 4, 3, TQ);   // a turquoise inlay
+  if (clue && ((int)floor(now * 8) & 1)) { R(x - 2, GY - 17, 4, 2, rgb(180, 250, 245)); R(x + 11, GY - 12, 2, 2, rgb(180, 250, 245)); }   // the loose stone catches his eye
+  if (!taken) { drawIdol(x, GY - 26, now, false); if ((int)floor(now * 3) & 1) { R(x + 5, GY - 38, 1, 3, WHITE565); R(x + 4, GY - 37, 3, 1, WHITE565); } }
+}
+static void drawHole(float x) {   // a hole in the road: a black shaft with a ragged lip, roots hanging in it
+  R(x - 12, GY, 24, H - GY, rgb(6, 4, 3)); R(x - 12, GY, 24, 3, rgb(34, 22, 12)); R(x - 14, GY, 2, 8, rgb(90, 62, 32)); R(x + 12, GY, 2, 8, rgb(90, 62, 32)); R(x - 14, GY - 1, 4, 2, rgb(40, 170, 50)); R(x + 10, GY - 1, 4, 2, rgb(40, 170, 50));
+  R(x - 8, GY + 3, 1, 8, rgb(96, 64, 30)); R(x + 5, GY + 3, 1, 6, rgb(96, 64, 30)); R(x - 3, GY + 3, 1, 4, rgb(96, 64, 30));
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -959,6 +998,8 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
   }
   }
   if (b.tree.live) drawTree(b.tree, b, A, now);
+  HERO_PULSE = A.pulse;
+  if (b.rel.live) { const int x = rnd(HX + b.rel.wx - b.scroll); if (x > -20 && x < W + 20) { if (b.rel.shift > 2) drawHole((float)x); drawRelic(x + b.rel.shift, now, b.rel.taken, b.rel.clue); } }
   for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; const int gy = GY - ghr(b, o.wx);
     if (o.kind == OB_LOG) drawLog(x, gy); else if (o.kind == OB_NUT) drawNut(o, x, b, now); else if (o.kind == OB_TIGER) drawTiger(x, (float)gy, now, obsTtl(b, o)); else if (o.kind == OB_BEAR) drawBear(x, (float)gy, now, obsTtl(b, o)); else if (o.kind == OB_POND) drawPond(o, x, now, obsTtl(b, o)); else drawBeachTurtle(x, now); }
   if (G.hide && G.hideT > 0.8f) drawJaguar(W + 30 - (G.hideT - 0.8f) * 75, now);
@@ -983,8 +1024,12 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
     else if (&o == hang) { ex = xa + 12; ey = AY + 48; }
     seg(xa, AY, ex, ey, rgb(70, 150, 40), 1); for (int k = 1; k < 6; k++) R(lp(xa, ex, k / 6.0f) - 1, lp(AY, ey, k / 6.0f), 2, 1, rgb(40, 100, 28)); R(ex - 1, ey, 3, 3, rgb(70, 150, 40));
   }
+  float hxx = HX;
+  if (b.find.live) { mode = b.find.t >= 3.2f ? HM_PUSH : HM_FIND; y = gb; FIND_T = b.find.t; }
+  if (b.fall.live) { const float t = b.fall.t; hxx = lp((float)HX, HX + b.rel.wx - b.scroll, sm01(cl01(t / 0.35f))); y = gb + rnd(90 * t * t); mode = HM_PLUNGE; }
   HC.slope = 0.5f * G.sl; HC.wob = G.sl > 0 ? 4 * G.sl : 12 * G.sl;   // uphill he leans in, downhill he leans back
-  drawHero(HX, (float)rnd(y), now, mode);
+  drawHero(hxx, (float)rnd(y), now, mode);
+  if (b.find.live) { const float t = b.find.t; if (t < 0.9f) { R(HX + 2, y - 36, 2, 5, rgb(255, 210, 60)); R(HX + 2, y - 30, 2, 2, rgb(255, 210, 60)); } else if (t >= 1.7f && t < 3.2f) drawIdol(HX + 3, y - 31, now, true); }
   HC.slope = 0; HC.wob = 0;
   if (G.hide) drawBush(HX + 2, fminf(1.0f, G.hideT / 0.6f) * (G.hideT > 5.0f ? fmaxf(0.0f, 1 - (G.hideT - 5.0f) / 0.8f) : 1.0f));
   if (b.bat.live) drawBat(b.bat, A);
