@@ -23,6 +23,12 @@ constexpr uint16_t P_S_D = px565(shadeC(C_S, 0.6f)), P_G_D = px565(shadeC(C_G, 0
 struct HeroCtx { float ph = 0, sneak = 0, slope = 0, wob = 0, hurt = 0; };
 static HeroCtx HC;
 
+// The colours the limb routines paint with: the hero's own, or (for the pursuers) another set. Dark = the far limb, 0.6 of the colour.
+struct Limbs { uint16_t p, pd, b, bd, g, gd, s, sd; };
+static Limbs LIMB = {P_P, P_P_D, P_B, P_B_D, P_G, P_G_D, P_S, P_S_D};
+static void setLimbs(Col p, Col b, Col g, Col s) { LIMB = Limbs{px565(p), px565(shadeC(p, 0.6f)), px565(b), px565(shadeC(b, 0.6f)), px565(g), px565(shadeC(g, 0.6f)), px565(s), px565(shadeC(s, 0.6f))}; }
+static void resetLimbs() { LIMB = Limbs{P_P, P_P_D, P_B, P_B_D, P_G, P_G_D, P_S, P_S_D}; }
+
 struct Leg { float kx, ky, ax, ay; };
 struct Pt { float x, y; };
 
@@ -36,11 +42,11 @@ static Leg runLeg(float q, float hx, float hy) {   // q: this leg's phase 0..1; 
   return legAF(hx, hy, 8 + 36 * amp * sinf(2 * (float)M_PI * q) + 6 * up, 10 + 28 * HC.sneak + 82 * amp * cp + 26 * up * cp + 12 * dn);
 }
 static void drawLeg(const Leg& L, float hx, float hy, bool dark) {
-  uint16_t pc = dark ? P_P_D : P_P, bc = dark ? P_B_D : P_B;
+  uint16_t pc = dark ? LIMB.pd : LIMB.p, bc = dark ? LIMB.bd : LIMB.b;
   seg(hx, hy, L.kx, L.ky, pc, 2); seg(L.kx, L.ky, L.ax, L.ay, pc, 2); R(L.ax - 1, L.ay - 1, 4, 2, bc);   // the boot points forward
 }
 static void drawArm(float sx, float sy, float ang, float bend, bool dark) {   // ang from straight down (forward +); the forearm folds by bend; jacket sleeve to the wrist, then a small hand
-  uint16_t sc = dark ? P_G_D : P_G, kc = dark ? P_S_D : P_S;
+  uint16_t sc = dark ? LIMB.gd : LIMB.g, kc = dark ? LIMB.sd : LIMB.s;
   float ex = sx + UA * sinf(ang), ey = sy + UA * cosf(ang), wx = ex + FA * sinf(ang + bend), wy = ey + FA * cosf(ang + bend);
   seg(sx, sy, ex, ey, sc, 2); seg(ex, ey, wx, wy, sc, 2); R((float)rnd(wx) - 1, (float)rnd(wy) - 1, 2, 2, kc);
 }
@@ -50,8 +56,8 @@ static Pt armTo(float sx, float sy, float tx, float ty, bool dark, float sg = 1)
   const float L = UA + FA - 0.3f;
   if (d > L) { dx *= L / d; dy *= L / d; d = L; }
   float a = (UA * UA - FA * FA + d * d) / (2 * d), h = sqrtf(fmaxf(0, UA * UA - a * a)), ex = sx + dx * a / d - sg * dy / d * h, ey = sy + dy * a / d + sg * dx / d * h;
-  uint16_t sc = dark ? P_G_D : P_G; seg(sx, sy, ex, ey, sc, 2); seg(ex, ey, sx + dx, sy + dy, sc, 2);
-  R((float)rnd(sx + dx) - 1, (float)rnd(sy + dy) - 1, 2, 2, dark ? P_S_D : P_S);
+  uint16_t sc = dark ? LIMB.gd : LIMB.g; seg(sx, sy, ex, ey, sc, 2); seg(ex, ey, sx + dx, sy + dy, sc, 2);
+  R((float)rnd(sx + dx) - 1, (float)rnd(sy + dy) - 1, 2, 2, dark ? LIMB.sd : LIMB.s);
   return Pt{sx + dx, sy + dy};
 }
 static void legTo(float hx, float hy, float tx, float ty, bool dark, float sg = 1) {   // a two-bone leg reaching a foot target; the knee points forward
@@ -60,8 +66,8 @@ static void legTo(float hx, float hy, float tx, float ty, bool dark, float sg = 
   const float L = TH + SH - 0.3f;
   if (d > L) { dx *= L / d; dy *= L / d; d = L; }
   float a = (TH * TH - SH * SH + d * d) / (2 * d), h = sqrtf(fmaxf(0, TH * TH - a * a)), kx = hx + dx * a / d + sg * dy / d * h, ky = hy + dy * a / d - sg * dx / d * h;
-  uint16_t pc = dark ? P_P_D : P_P; seg(hx, hy, kx, ky, pc, 2); seg(kx, ky, hx + dx, hy + dy, pc, 2);
-  R((float)rnd(hx + dx) - 1, (float)rnd(hy + dy) - 1, 4, 2, dark ? P_B_D : P_B);
+  uint16_t pc = dark ? LIMB.pd : LIMB.p; seg(hx, hy, kx, ky, pc, 2); seg(kx, ky, hx + dx, hy + dy, pc, 2);
+  R((float)rnd(hx + dx) - 1, (float)rnd(hy + dy) - 1, 4, 2, dark ? LIMB.bd : LIMB.b);
 }
 // Torso and a head that can turn independently of the running body; (hx, hy) is the hip. Returns the shoulder.
 static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehind = false) {

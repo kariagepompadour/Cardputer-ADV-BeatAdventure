@@ -39,6 +39,7 @@ struct Liner { float w = 0, z = 40, zT = 40, stepT = 0, mt = 0, q = 0; ClPh ph =
 constexpr float JD = 0.62f, JH = 28.0f;   // the jump's time and height
 enum ObKind : uint8_t { OB_LOG, OB_TURTLE, OB_NUT };
 struct Obs { double arr = 0, born = 0; float wx = 0, Tf = 0.7f, xw0 = 0, y0 = 0; ObKind kind = OB_LOG; bool done = false, live = false; };
+struct Hunter { float t = 0; bool live = false, front = false, dodged = false; };   // a masked spear-carrier that appears ahead or behind, then loses the faster, leaping hero
 struct Bat { float x = 0, y = 0, y0 = 0, t = 0; bool live = false; };   // the bat of every old game
 struct Tree { float wx = 0; int throws = 0; double throwAt = -9; bool live = false; };   // a palm with a monkey on it
 struct Beach {
@@ -46,6 +47,7 @@ struct Beach {
   Obs obs[6];
   Tree tree;
   Bat bat;
+  Hunter hunter; int hunterN = 0; double nextHunter = 0;
   double lastArr = 0, nextGap = 0.78, shipStart = 0, nextTree = 0;
   uint32_t rng = 2463534242u;
 };
@@ -66,7 +68,7 @@ struct Game {
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
   if (s == SC_LINER) G.cl = Liner();
-  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.sl = 0; G.hide = false; G.quietT = 0; }
+  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
 }
 static void switchTo(Game& G, Scene s) { if (G.fadeDir) return; G.next = s; G.fadeDir = 1; G.fade = 0; }
 static void gameInit(Game& G, double now) { G = Game(); HC = HeroCtx(); setScene(G, SC_LINER, now); }
@@ -154,6 +156,13 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
   b.scroll += V * G.sp * dt;
   for (Obs& o : b.obs) if (o.live && obsX(b, o) < -40) o.live = false;
   if (b.jump >= 0) { b.jump += dt; if (b.jump > b.jd) b.jump = -1; }
+  Hunter& hu = b.hunter;
+  if (!hu.live && now >= b.nextHunter && !G.fadeDir && !G.hide) { hu = Hunter(); hu.live = true; hu.front = (++b.hunterN & 1) != 0; b.nextHunter = now + 17 + rand01(G) * 7; }
+  if (hu.live) {
+    hu.t += dt;
+    if (!hu.dodged && hu.t >= (hu.front ? 2.4f : 1.5f)) { hu.dodged = true; if (b.jump < 0 && !G.hide) { b.jump = 0; b.jd = JD; b.jh = JH; } }   // the hero leaps and leaves him behind
+    if (hu.t > 5) hu.live = false;
+  }
   if (b.jump < 0) {   // hop what comes: he leaves the ground half a jump before it arrives, so he lands on the beat
     for (Obs& o : b.obs) if (o.live && !o.done) { float t = obsTtl(b, o); if (t < JD / 2 && t > -0.1f) { b.jd = JD; b.jh = JH; b.jump = fmaxf(0, b.jd / 2 - t); o.done = true; break; } }
   }
@@ -171,7 +180,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = G.hide ? 0.0f : 1 - 0.4f * G.sneak;
+  G.sp = (G.hide ? 0.0f : 1 - 0.4f * G.sneak) * (G.scene == SC_BEACH && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
   HC.sneak = G.sneak;
   if (!G.hide) HC.ph += dt * G.sp / (A.sounding ? A.T : 0.6f);   // the stride follows the beat: the left foot lands on it
   if (!G.hide && A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
@@ -356,6 +365,34 @@ static void drawBush(float x, float u) {   // the bush the hero hides behind, gr
   for (int i = 0; i < 6; i++) { int bx = rnd(x - 12 + i * 4), bh = (int)(h - (i % 2) * 3 - fabsf(i - 2.5f) * 1.2f); if (bh > 0) { Ri(bx, GY - bh, 5, bh, LEAF); Ri(bx, GY - bh, 5, 2, LEAF2); } }
   Ri(rnd(x - 10), GY - 2, 20, 2, LEAF);
 }
+static void drawMaskedHunter(float x, float fy, float ph) {   // a pursuer in a carved mask with a spear
+  const Col SK{157, 93, 57}, DARKc{38, 29, 26};
+  const uint16_t OCHRE = rgb(232, 169, 56), RED = rgb(192, 48, 37), TQ = rgb(43, 189, 167), DARK = rgb(38, 29, 26), WOOD = rgb(119, 75, 39);
+  setLimbs(SK, DARKc, SK, SK);
+  const float hx = x, p = ph;
+  const Leg l0 = runLeg(p, hx, 0), l1 = runLeg(p + 0.5f, hx, 0);
+  const float hy = fy - fmaxf(l0.ay, l1.ay) - 1;
+  const Leg back = runLeg(p + 0.5f, hx, hy), front = runLeg(p, hx, hy);
+  const float sx = hx + 2, sy = hy - TORSO_L + 1, pump = sinf(2 * (float)M_PI * p);
+  drawLeg(back, hx, hy, true);
+  const Pt grip = armTo(sx + 1, sy + 1, sx + 7 + pump, sy - 3 + pump * 2, true);
+  seg(grip.x - 7, grip.y + 8, grip.x + 13, grip.y - 11, WOOD, 1); R(grip.x + 12, grip.y - 14, 4, 4, OCHRE); R(grip.x + 13, grip.y - 12, 2, 2, TQ);
+  seg(hx, hy, sx, sy, OCHRE, 5); R(hx - 3, hy, 7, 3, RED); R(hx - 1, hy + 2, 3, 3, TQ);
+  R(sx - 4, sy - 2, 9, 2, TQ); R(sx - 5, sy - 6, 10, 2, RED);   // mask silhouette and painted crown
+  R(sx - 4, sy - 5, 9, 8, OCHRE); R(sx - 4, sy - 5, 2, 8, RED); R(sx + 3, sy - 5, 2, 8, RED);
+  R(sx - 2, sy - 2, 2, 1, DARK); R(sx + 2, sy - 2, 2, 1, DARK); R(sx, sy, 2, 2, TQ); R(sx - 1, sy + 3, 4, 1, DARK);
+  R(sx - 6, sy - 3, 2, 3, OCHRE); R(sx + 5, sy - 3, 2, 3, OCHRE);   // broad mask and side tabs
+  drawLeg(front, hx, hy, false);
+  armTo(sx - 1, sy + 2, sx + 3 - pump, sy + 5 - pump * 2, false);
+  resetLimbs();
+}
+static void drawJungleHunter(const Hunter& h) {   // appears ahead (facing back) or behind, then loses the faster, leaping hero
+  const int x = rnd(h.front ? 255 - 64 * h.t : -20 + 45 * fminf(h.t, 2.2f) - 50 * fmaxf(0.0f, h.t - 2.2f));
+  if (x < -25 || x > W + 25) return;
+  if (h.front) mirrorOn(x);
+  drawMaskedHunter((float)x, (float)GY, HC.ph + h.t * 1.4f);
+  mirrorOff();
+}
 static void drawBat(const Bat& b, const AudioIn& A) {
   const int x = rnd(b.x), y = rnd(b.y), f = (int)floorf(b.t / (A.T / 4)) & 1; const uint16_t c = rgb(90, 50, 120), GOLD = rgb(255, 210, 60);
   Ri(x - 1, y, 4, 3, c); Ri(x, y, 1, 1, GOLD); Ri(x + 2, y, 1, 1, GOLD); Ri(x - 1, y - 2, 1, 2, c); Ri(x + 2, y - 2, 1, 2, c);
@@ -377,6 +414,7 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
   if (b.tree.live) drawTree(b.tree, b, A, now);
   for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; if (o.kind == OB_LOG) drawLog(x, GY); else if (o.kind == OB_NUT) drawNut(o, x, b, now); else drawBeachTurtle(x, now); }
   if (G.hide && G.hideT > 0.8f) drawJaguar(W + 30 - (G.hideT - 0.8f) * 75, now);
+  if (b.hunter.live) drawJungleHunter(b.hunter);
   float y = GY; HeroMode mode = G.hide ? (G.hideT < 5.0f ? HM_HIDE : HM_IDLE) : HM_RUN;
   if (b.jump >= 0) { float u = b.jump / b.jd; y = GY - 4 * b.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; }
   HC.slope = 0; HC.wob = 0;
