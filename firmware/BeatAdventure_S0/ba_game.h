@@ -37,12 +37,14 @@ struct Liner { float w = 0, z = 40, zT = 40, stepT = 0, mt = 0, q = 0; ClPh ph =
 
 // ---- Stage 2: the beach (the web demo's "jungle" with land = "open"): sand road, the liner leaving, driftwood logs and sea turtles to jump.
 constexpr float JD = 0.62f, JH = 28.0f;   // the jump's time and height
-enum ObKind : uint8_t { OB_LOG, OB_TURTLE };
-struct Obs { double arr = 0; float wx = 0; ObKind kind = OB_LOG; bool done = false, live = false; };
+enum ObKind : uint8_t { OB_LOG, OB_TURTLE, OB_NUT };
+struct Obs { double arr = 0, born = 0; float wx = 0, Tf = 0.7f, xw0 = 0, y0 = 0; ObKind kind = OB_LOG; bool done = false, live = false; };
+struct Tree { float wx = 0; int throws = 0; double throwAt = -9; bool live = false; };   // a palm with a monkey on it
 struct Beach {
   float scroll = 0, jump = -1, jd = JD, jh = JH;
   Obs obs[6];
-  double lastArr = 0, nextGap = 0.78, shipStart = 0;
+  Tree tree;
+  double lastArr = 0, nextGap = 0.78, shipStart = 0, nextTree = 0;
   uint32_t rng = 2463534242u;
 };
 
@@ -61,7 +63,7 @@ struct Game {
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
   if (s == SC_LINER) G.cl = Liner();
-  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.sl = 0; }
+  if (s == SC_BEACH) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.sl = 0; }
 }
 static void switchTo(Game& G, Scene s) { if (G.fadeDir) return; G.next = s; G.fadeDir = 1; G.fade = 0; }
 static void gameInit(Game& G, double now) { G = Game(); HC = HeroCtx(); setScene(G, SC_LINER, now); }
@@ -123,9 +125,26 @@ static void spawnBeach(Game& G, const AudioIn& A, double now) {   // called on a
   }
 }
 
+static inline float monkeyY(const Tree& t, double now) { return (float)rnd(42 + 16 * sinf((float)(now * 0.9 + t.wx * 0.013))); }   // he shuttles up and down the trunk
+
 static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
   Beach& b = G.bc;
   if (A.beatNow) spawnBeach(G, A, now);
+  // a palm with a monkey now and then; he throws a coconut ahead of the hero, and it lands and lies there like a log
+  Tree& t = b.tree;
+  if (!t.live && A.sounding && !G.fadeDir && now > b.nextTree) { t = Tree(); t.live = true; t.wx = b.scroll + W - HX + 24; b.nextTree = now + 7 + rand01(G) * 5; }
+  if (t.live) {
+    float sx = HX + t.wx - b.scroll;
+    if (A.beatNow && t.throws < 2 && sx < 214 && sx > 100 && !G.isQuiet && G.sp > 0.7f && now - t.throwAt > 1.2) {
+      const float Tf = 0.7f, wx = b.scroll + V * Tf + 100;
+      bool room = true; for (const Obs& o : b.obs) if (o.live && fabsf(o.wx - wx) <= 150) room = false;
+      if (room) for (Obs& o : b.obs) if (!o.live) {
+        o.live = true; o.done = false; o.kind = OB_NUT; o.wx = wx; o.arr = now + (wx - b.scroll) / V; o.born = now; o.Tf = Tf; o.xw0 = t.wx - 8; o.y0 = monkeyY(t, now) - 4;
+        if (o.arr > b.lastArr) b.lastArr = o.arr; t.throws++; t.throwAt = now; break;
+      }
+    }
+    if (sx < -30) t.live = false;
+  }
   b.scroll += V * G.sp * dt;
   for (Obs& o : b.obs) if (o.live && obsX(b, o) < -40) o.live = false;
   if (b.jump >= 0) { b.jump += dt; if (b.jump > b.jd) b.jump = -1; }
@@ -292,6 +311,26 @@ static void drawBeachTurtle(float x, double now) {   // a small sea turtle crawl
   R(x - 4, GY - 8, 6, 3, plate); R(x + 4, GY - 7, 3, 2, plate); R(x - 7, GY - 5, 2, 2, plate);
 }
 
+static void drawTree(const Tree& t, const Beach& b, const AudioIn& A, double now) {   // a palm with a monkey on it: he climbs by hands and feet in time with the beat, and throws a coconut
+  const int sx = rnd(HX + t.wx - b.scroll); if (sx < -20 || sx > W + 24) return;
+  const int base = GY, my = (int)monkeyY(t, now), ph = (int)floor(now / (A.T / 2)) & 1; const bool th = now - t.throwAt < 0.35;
+  const uint16_t TK = rgb(150, 100, 52), TKD = rgb(104, 66, 30), LF = rgb(40, 170, 60), LF2 = rgb(90, 210, 80), CT = rgb(80, 50, 24);
+  const uint16_t MK = rgb(120, 70, 30), MKD = rgb(78, 44, 20), MKF = rgb(226, 176, 128);
+  Ri(sx - 3, 14, 7, base - 14, TK); Ri(sx + 2, 14, 2, base - 14, TKD); for (int y = 22; y < base; y += 5) Ri(sx - 3, y, 7, 1, TKD);
+  Ri(sx - 20, 15, 12, 3, LF); Ri(sx + 9, 15, 12, 3, LF); Ri(sx - 12, 11, 24, 3, LF2); Ri(sx - 7, 7, 14, 3, LF); Ri(sx - 24, 18, 6, 3, LF); Ri(sx + 19, 18, 6, 3, LF); Ri(sx - 26, 21, 3, 3, LF); Ri(sx + 24, 21, 3, 3, LF);
+  Ri(sx - 3, 15, 3, 3, CT); Ri(sx + 1, 15, 3, 3, CT);
+  seg((float)(sx - 6), (float)(my + 5), (float)(sx - 10), (float)(my + 8), MKD, 1); seg((float)(sx - 10), (float)(my + 8), (float)(sx - 8), (float)(my + 11), MKD, 1);
+  Ri(sx - 6, my, 4, 6, MK); Ri(sx - 7, my - 4, 4, 4, MK); Ri(sx - 7, my - 3, 2, 2, MKF); Ri(sx - 8, my - 5, 2, 2, MK);
+  Ri(sx - 3, my + (ph ? 0 : 3), 2, 1, MKD); Ri(sx - 3, my + (ph ? 4 : 1), 2, 1, MKD);
+  if (th) { Ri(sx - 9, my - 7, 2, 4, MK); Ri(sx - 10, my - 9, 3, 3, CT); }
+}
+static void drawNut(const Obs& o, float x, const Beach& b, double now) {
+  const uint16_t CT = rgb(80, 50, 24), D2 = rgb(70, 44, 20);
+  const float q = cl01((float)((now - o.born) / o.Tf));
+  if (q < 1) { float xw = lp(o.xw0, o.wx, q), y = lp(o.y0, GY - 3, q) - 10 * 4 * q * (1 - q); int sx = rnd(HX + xw - b.scroll), sp = (int)floor(now * 18) & 1; Ri(sx - 2, rnd(y) - 2, 5, 5, CT); Ri(sx - 2 + sp * 2, rnd(y) - 2, 2, 2, D2); }
+  else { R(x - 3, GY - 6, 6, 6, CT); R(x - 2, GY - 5, 2, 2, D2); R(x - 1, GY - 7, 2, 1, CT); }
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -303,7 +342,8 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
     if (a < 2) { uint16_t gc = rgb(150, 160, 70); R(x, GY - 2, 1, 2, gc); R(x + 2, GY - 3, 1, 3, gc); R(x + 4, GY - 2, 1, 2, gc); }
     if (bb == 0) { R(x, GY + 7, 3, 2, rgb(250, 240, 230)); R(x + 1, GY + 7, 1, 1, rgb(240, 170, 160)); } else if (bb == 3) R(x + 1, GY + 11, 3, 2, rgb(170, 140, 90)); else if (bb == 5) R(x, GY + 5, 2, 1, rgb(190, 160, 108));
   }
-  for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; if (o.kind == OB_LOG) drawLog(x, GY); else drawBeachTurtle(x, now); }
+  if (b.tree.live) drawTree(b.tree, b, A, now);
+  for (const Obs& o : b.obs) if (o.live) { float x = obsX(b, o); if (x > W + 20) continue; if (o.kind == OB_LOG) drawLog(x, GY); else if (o.kind == OB_NUT) drawNut(o, x, b, now); else drawBeachTurtle(x, now); }
   float y = GY; HeroMode mode = HM_RUN;
   if (b.jump >= 0) { float u = b.jump / b.jd; y = GY - 4 * b.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; }
   HC.slope = 0; HC.wob = 0;
