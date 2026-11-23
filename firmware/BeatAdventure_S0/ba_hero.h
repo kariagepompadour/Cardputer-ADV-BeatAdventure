@@ -79,7 +79,7 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH, HM_CROUCH };
 static float FIND_T = 0, HERO_PULSE = 0;   // seconds since he stopped at the treasure (the web demo's S.fnd), and the beat's pulse
 static float AIR_U = 0;
 static float SWING_K = 0;   // how far along its arc the vine is, -1..1 (the web demo's S.swK)   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
@@ -96,6 +96,11 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawBody(hx, hy, lean); drawLeg(L1, hx, hy, false);
     const float hold = sm01(cl01(u / 0.12f)) * (1 - sm01(cl01((u - 0.9f) / 0.1f)));   // the near hand goes up to hold the fedora in the air and lets go as he lands; the far arm trails behind
     armTo(sx, sy, lp(sx + 3, sx + 2, hold), lp(sy + 7, sy - 4, hold), false);
+    return;
+  }
+  if (mode == HM_CROUCH) {   // crouched in a mine cart: hips low, knees deep, the body leaning forward, both hands gripping the rim ahead, the head up; he rides the bumps with his knees
+    const float bump = (float)rnd(tsin(now * 30) * 0.5f + HERO_PULSE * 1.2f), hx = x, hy = feetY - 7 + bump, lean = 22 * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+    drawLeg(legAF(hx - 1, hy, 64, 122), hx - 1, hy, true); armTo(sx, sy, sx + 9, feetY - 9, true); drawBody(hx, hy, lean); drawLeg(legAF(hx, hy, 68, 126), hx, hy, false); armTo(sx, sy, sx + 10, feetY - 10, false);
     return;
   }
   if (mode == HM_FIND) {   // a discovery: he freezes and clutches his hat, then reaches for the idol, then lifts it high with both hands while the music celebrates

@@ -106,6 +106,8 @@ struct Cave {
   bool duck = false; double lastArr = 0, nextGap = 0.78, t = 0; float mvT = 0;
   struct { bool live = false; float t = 0; } trap; struct { bool live = false; float x = 0; } arrows[4]; double nextArrow = 6;   // an arrow trap: a slit in the right wall flashes, then shoots
   struct { bool live = false, roll = false, stop = false, gone = false; float t = 0, nx = 0, bw = 0, endT = -1; } boulder; bool bd = false;   // a huge boulder rolls down the tunnel behind him; there is a niche in the wall
+  int cartS = 0; bool cart = false, chased = false; float cartX = 0, bt = 0, bs = 0, rideT = 0, vm = 1; float gaps[2] = {0, 0}; int nGaps = 0;   // the mine cart: 1 parked ahead, 2 he hops in, 3 riding; two broken places in the track
+  struct { bool live = false; float t = 0; } chase;   // the guardians who come after him
   CvMv mv; CvObs obs[8]; CvDrip drips[16]; CvSplash splash[16]; Bat bats[2];
   uint8_t roof[128] = {}; int roofN = -2, roofPrev = 28; int cv = 28;   // the ceiling, one column every 8 px, each keeping its height while it scrolls left
 };
@@ -345,17 +347,19 @@ static int cey(const Cave& c, float x) {
   return rnd(lp((float)r0, (float)r1, f - i) + 2 * sinf((x + c.scroll) * 0.13f));
 }
 static float labH(const Cave& c, float wx) {   // the labyrinth floor: rolling slopes between the events, flat near a hole or a ladder
+  for (int i = 0; i < c.nGaps; i++) if (fabsf(wx - c.gaps[i]) < 60) wx = c.gaps[i] - 60;   // a level plateau round each broken place in the track, so that he lands at the height he left
   const float d = fminf(fabsf(wx - c.wx), fabsf(wx - c.pw)), w = cl01((d - 50) / 70);
-  return fmaxf(0.0f, 15 * sinf(wx * 0.028f + 0.6f) + 3 * sinf(wx * 0.07f) + 6) * w;
+  const float base = fmaxf(0.0f, 15 * sinf(wx * 0.028f + 0.6f) + 3 * sinf(wx * 0.07f) + 6) * w, co = c.nGaps == 0 ? 0.0f : cl01((wx - c.cartX - 40) / 80);
+  return co > 0 ? lp(base, (22 - 22 * cosf((wx - c.cartX - 40) * 0.01309f)) * w, co) : base;   // after the cart: long slopes, a whole screen climbing, then a whole screen descending
 }
-static inline float cvTtl(const Cave& c, const CvObs& o) { return (o.wx - c.scroll) / V; }
+static inline float cvTtl(const Cave& c, const CvObs& o) { return (o.wx - c.scroll) / (V * c.vm); }
 static void updateCave(Game& G, const AudioIn& A, float dt, double now) {
-  Cave& L = G.cv; L.t += dt; L.scroll += V * G.sp * dt;
+  Cave& L = G.cv; L.t += dt; L.scroll += V * G.sp * dt;   // (G.sp already includes the cart's speed-up)
   if (L.ld < 1) L.ld += dt;
   if (L.mv.live) L.mvT += dt; else L.mvT = 0;
   if ((L.t > 170 || L.mvT > 14) && !G.fadeDir) switchTo(G, SC_LINER);   // a watchdog: whatever goes wrong, the tunnel lets him out (back to the start for now)
   // the ceiling presses: the light shrinks and the roof falls when it is quiet and rises when it is loud
-  while (L.roofN * PITCH < L.scroll + W + 16) { int target = rnd(38 - 22 * A.level), i = L.roofN++; int d = target - L.roofPrev; d = d < -2 ? -2 : d > 2 ? 2 : d; L.roofPrev += d; L.roof[i & 127] = (uint8_t)L.roofPrev; }
+  while (L.roofN * PITCH < L.scroll + W + 16) { int target = rnd(L.cart ? 26 - 11 * A.level : 38 - 22 * A.level), i = L.roofN++; int d = target - L.roofPrev; d = d < -2 ? -2 : d > 2 ? 2 : d; L.roofPrev += d; L.roof[i & 127] = (uint8_t)L.roofPrev; }
   L.cv = cey(L, HX);
   if (A.beatNow && A.sounding) for (CvDrip& d : L.drips) if (!d.live) { d.live = true; d.x = 90 + rand01(G) * 150; d.y = (float)cey(L, d.x); d.v = 0; break; }
   for (CvDrip& d : L.drips) if (d.live) { d.v += 260 * dt; d.y += d.v * dt; d.x -= V * G.sp * dt; if (d.y >= GY - rnd(labH(L, L.scroll + d.x - HX))) { d.live = false; for (CvSplash& p : L.splash) if (!p.live) { p.live = true; p.x = d.x; p.t = 0; break; } } else if (d.x <= -4) d.live = false; }
@@ -376,6 +380,14 @@ static void updateCave(Game& G, const AudioIn& A, float dt, double now) {
   // jump what comes; duck under a low roof
   if (L.jump >= 0) { L.jump += dt; if (L.jump > JD) L.jump = -1; }
   L.duck = false;
+  // the mine cart waits ahead on the lower level; the guardians come after him; he hops in and rides
+  if (!L.chased && L.depth == 1 && L.ld >= 1 && !L.mv.live) { L.chased = true; L.cartS = 1; L.cartX = L.scroll + 260; L.wx = L.cartX + 2100; L.gaps[0] = L.cartX + 760; L.gaps[1] = L.cartX + 1500; L.nGaps = 2; }   // a long ride ahead, with two places where the track is broken
+  if (L.cartS == 1 && !L.chase.live && L.cartX - L.scroll < 140) { L.chase.live = true; L.chase.t = 0; }   // he sees it, and the guardians come after him
+  if (L.cartS == 1 && L.cartX - L.scroll <= 14 && !L.mv.live) { L.cartS = 2; L.bt = 0; L.bs = L.scroll; L.jump = -1; }   // he reaches it and hops in
+  if (L.cartS == 2) { L.bt += dt; L.scroll = lp(L.bs, L.cartX, sm01(cl01(L.bt / 0.5f))); if (L.bt >= 0.55f) { L.cartS = 3; L.cart = true; L.rideT = 0; } }   // the world slides the last few dots while he jumps; then the cart rolls off
+  if (L.cartS == 3) L.rideT += dt;
+  if (L.mv.live) { L.cart = false; if (L.cartS == 3) L.cartS = 0; }
+  if (L.chase.live) { L.chase.t += dt; if (L.chase.t > 11) L.chase.live = false; }
   // a rumble: a huge boulder comes down the tunnel; there is a niche in the wall just ahead
   if (!L.bd && L.stage == 0 && !L.mv.live && L.ld >= 1 && !L.boulder.live && L.wx - L.scroll < 330 && L.wx - L.scroll > 250) {
     L.bd = true; for (CvObs& o : L.obs) if (o.live && !(o.wx < L.scroll - 20)) o.live = false;
@@ -396,7 +408,7 @@ static void updateCave(Game& G, const AudioIn& A, float dt, double now) {
   for (auto& a : L.arrows) if (a.live) { a.x -= 260 * dt; if (a.x <= -20) a.live = false; }
   if (L.jump < 0 && !L.mv.live) { for (const auto& a : L.arrows) if (a.live && a.x - HX < 52 && a.x - HX > -6) L.duck = true; if (L.boulder.live && L.boulder.stop) L.duck = true; }   // he ducks under an arrow, and presses into the niche while the boulder passes
   for (const CvObs& o : L.obs) if (o.live && o.kind == CV_LOW && cvTtl(L, o) < 0.3f && cvTtl(L, o) > -0.28f && L.jump < 0) L.duck = true;
-  if (L.jump < 0 && !L.duck && !L.mv.live) for (CvObs& o : L.obs) if (o.live && !o.done && o.kind != CV_LOW && cvTtl(L, o) < JD / 2 && cvTtl(L, o) > -0.1f) { L.jump = fmaxf(0, JD / 2 - cvTtl(L, o)); o.done = true; break; }
+  if (L.jump < 0 && !L.duck && !L.mv.live && L.cartS != 2) for (CvObs& o : L.obs) if (o.live && !o.done && o.kind != CV_LOW && cvTtl(L, o) < JD / 2 && cvTtl(L, o) > -0.1f) { L.jump = fmaxf(0, JD / 2 - cvTtl(L, o)); o.done = true; break; }
   // the way on: a hole down, a ladder up, then the golden doorway
   if (L.stage == 2 && now - G.t0 < 86 && L.wx - L.scroll < 300) L.wx = L.scroll + 520;   // the doorway waits until the stage has had its time
   if (!L.mv.live && L.wx - L.scroll <= (L.stage == 2 ? 14 : 5) && !G.fadeDir) { L.mv = CvMv(); L.mv.live = true; L.mv.kind = L.stage == 2 ? MV_GATE : L.stage == 0 ? MV_DOWN : MV_UP; }
@@ -457,7 +469,9 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || (G.cv.boulder.live && G.cv.boulder.stop)))) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop)))) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  if (G.scene == SC_CAVE) {   // in the mine cart the tunnel races past, faster in loud music
+    Cave& L = G.cv; L.vm = (L.cart && !L.mv.live) ? (1.45f + 0.5f * A.level) * (0.25f + 0.75f * sm01(cl01(L.rideT / 1.5f))) * fmaxf(0.6f, fminf(1.6f, 1 - 2.2f * (labH(L, L.scroll + 4) - labH(L, L.scroll - 4)) / 8)) : 1.0f; G.sp *= L.vm; }
   HC.sneak = G.sneak;
   if (!G.hide) HC.ph += dt * G.sp / (A.sounding ? A.T : 0.6f);   // the stride follows the beat: the left foot lands on it
   if (!G.hide && A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
@@ -1110,6 +1124,7 @@ static void drawCaveObs(const Cave& c, const CvObs& o, float x, double now) {
     if (f < 1) { float tipY = y0 + 12 + f * (GY - y0 - 12); spike(x + shake, tipY - 12, 8, 12, rgb(120, 100, 86), true); }
     else spike(x, GY, 8, 11, rgb(120, 100, 86), false); }
 }
+static bool nearGap(const Cave& c, float wx, float r);
 static void drawCaveBg(const Game& G, double now, int depth) {   // the cave itself: an old brick wall (bluer and darker the deeper it is), stalagmites, the ceiling and the floor in blocks
   const Cave& c = G.cv; const float sc = c.scroll;
   R(0, 0, W, H, ROCK0);
@@ -1121,7 +1136,8 @@ static void drawCaveBg(const Game& G, double now, int depth) {   // the cave its
   for (int k = (int)floorf(sc / PITCH) - 1; k < (int)floorf(sc / PITCH) + 32; k++) { float x0 = k * PITCH - sc + 1; int n = rnd(cey(c, k * PITCH - sc + 3) / (float)SEG); if (n < 1) n = 1; for (int j = 0; j < n; j++) R(x0, j * SEG + 1, 6, SEG_H, j == n - 1 ? ROCK3 : (j & 1 ? ROCK2 : rgb(66, 50, 46))); }   // the ceiling in blocks
   for (int k = (int)floorf(sc / 23) - 1; k < (int)floorf(sc / 23) + 12; k++) { float x = k * 23 - sc + 8; spike(x, (float)(cey(c, x) - 1), 6, 5 + (((k * 7) % 5 + 5) % 5) * 2, ROCK2, true); }   // stalactites that stay up
   R(0, GY, W, H - GY, ROCK0);   // the floor in blocks as well, fixed to the world: the columns rise and fall in slopes
-  for (int k = (int)floorf(sc / PITCH) - 1; k < (int)floorf(sc / PITCH) + 32; k++) { float x0 = k * PITCH - sc + 1; int top = GY - rnd(labH(c, sc + x0 + 3 - HX)); for (int j = 0, y = top + 1; y < H; j++, y += SEG) R(x0, y, 6, SEG_H, j == 0 ? ROCK3 : (((j + k) & 1) ? ROCK2 : rgb(66, 50, 46))); }
+  for (int k = (int)floorf(sc / PITCH) - 1; k < (int)floorf(sc / PITCH) + 32; k++) { float x0 = k * PITCH - sc + 1; int top = GY - rnd(labH(c, sc + x0 + 3 - HX)); if (nearGap(c, sc + x0 + 3 - HX, 22)) continue; for (int j = 0, y = top + 1; y < H; j++, y += SEG) R(x0, y, 6, SEG_H, j == 0 ? ROCK3 : (((j + k) & 1) ? ROCK2 : rgb(66, 50, 46))); }
+  for (int gi = 0; gi < c.nGaps; gi++) { const int gx = rnd(HX + c.gaps[gi] - sc - 22); if (gx < -50 || gx > W) continue; const int top = GY - rnd(labH(c, c.gaps[gi] - 60)); R(gx, top - 1, 44, H - top + 1, rgb(3, 2, 4)); R(gx - 1, top, 1, 3, ROCK3); R(gx + 44, top, 1, 3, ROCK3); }   // the broken place: a black drop
   for (int i = -1; i < 24; i++) { int k = (int)floorf(sc / 11) + i; float x = k * 11 - sc; int b = (int)((((uint32_t)k * 2654435761u) >> 16) % 6); if (b < 3) R(x, GY + 5 + b * 6, 4 + b, 2, b == 0 ? ROCK3 : ROCK1); }   // chips and cracks in the floor
 }
 static void drawLabFeature(const Cave& c, float xl, int kind, double now) {   // a hole in the floor (a drop), a shaft with a ladder (up a level), or the golden doorway
@@ -1139,6 +1155,54 @@ static void drawLabFeature(const Cave& c, float xl, int kind, double now) {   //
   (void)now;
 }
 
+
+static void drawWarrior(float x, float fy, double now, int i, float ph, float pulse) {   // an Aztec temple guardian, built like the hero: a feathered headdress, a cotton tunic with a sash and loincloth, gold bands, a round shield on the near arm and a spear in the far hand
+  const Col SKc{150, 92, 58}; const uint16_t TN = rgb(236, 150, 60), TQ = rgb(40, 200, 190), RD = rgb(214, 50, 40), GR = rgb(30, 170, 80), G1 = rgb(252, 208, 64), G1D = rgb(151, 125, 38), WD = rgb(120, 80, 40), OB = rgb(30, 24, 30), SK = px565(SKc);
+  const float p = ph + i * 0.27f, hx = x; setLimbs(SKc, Col{184, 134, 66}, SKc, SKc);
+  const float hy = fy - fmaxf(runLeg(p, hx, 0).ay, runLeg(p + 0.5f, hx, 0).ay) - 1; const Leg lA = runLeg(p, hx, hy), lB = runLeg(p + 0.5f, hx, hy);
+  const float lean = (12 + 3 * pulse) * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+  drawLeg(lB, hx, hy, true);
+  const float pump = sinf(2 * (float)M_PI * p); const Pt hf = armTo(sx, sy, sx + 7 + pump, sy - 3 + pump * 2, true);   // the arms pump with the stride; the far hand grips a spear, held forward and up
+  seg(hf.x - 6, hf.y + 7, hf.x + 10, hf.y - 8, WD, 1); R(hf.x + 10, hf.y - 10, 2, 2, OB); R(hf.x + 8, hf.y - 7, 1, 1, RD);
+  seg(hx, hy, sx, sy, TN, 4); seg(hx - 1, hy - 3, sx + 1, sy + 2, WHITE565, 1);   // the tunic, a pale sash across it
+  R(hx - 2, hy, 5, 3, RD); R(hx - 2, hy, 5, 1, G1); R(hx - 3, hy + 1, 1, 2, RD);   // the loincloth
+  R(sx - 1, sy - 4, 4, 4, SK); R(sx + 2, sy - 3, 1, 1, OB); R(sx - 1, sy - 4, 1, 4, OB); R(sx - 2, sy - 5, 6, 1, G1);   // the head: hair, an eye, a gold band
+  R(sx - 4, sy - 9, 1, 4, TQ); R(sx - 3, sy - 11, 1, 6, RD); R(sx - 1, sy - 12, 1, 7, GR); R(sx + 1, sy - 11, 1, 6, TQ); R(sx - 2, sy - 10, 1, 5, G1);   // the feathers, streaming back as he runs
+  drawLeg(lA, hx, hy, false); R(lA.ax, lA.ay - 2, 2, 1, G1); R(lB.ax, lB.ay - 2, 2, 1, G1D);   // gold anklets
+  const Pt hn = armTo(sx, sy, sx + 5 - pump, sy + 4 - pump * 2, false); R(hn.x - 1, hn.y - 1, 2, 1, G1); R(hf.x - 1, hf.y - 1, 2, 1, G1);   // gold wristbands
+  R(hn.x - 1, hn.y - 4, 6, 8, RD); R(hn.x - 2, hn.y - 3, 8, 6, RD); R(hn.x, hn.y - 2, 4, 4, G1); R(hn.x + 1, hn.y - 1, 2, 2, TQ); R(sx - 1, sy + 3, 2, 1, G1);   // the round shield at the chest
+  resetLimbs(); (void)now;
+}
+static void drawChasers(const Game& G, double now, const AudioIn& A) {
+  const Cave& c = G.cv; const float t = c.chase.t;
+  for (int i = 2; i >= 0; i--) {
+    float x = lp(-26.0f - i * 16, HX - 26.0f - i * 13 + 8 * A.level, sm01(cl01(t / 1.8f))); if (t > 8.5f) x -= (t - 8.5f) * 45; if (c.cartS >= 2) x -= fmaxf(0.0f, c.rideT) * 90;   // in the cart he leaves them far behind
+    if (x < -30) continue;
+    const float wx = c.scroll + (x - HX); float lift = 0;   // they leap over what he has already cleared
+    for (const CvObs& o : c.obs) if (o.live) { float d = fabsf(o.wx - wx), r = 16; if (d < r) lift = fmaxf(lift, 13 * sinf((float)M_PI * (1 - d / r))); }
+    drawWarrior((float)rnd(x), (float)(GY - rnd(labH(c, wx)) - rnd(lift)), now, i, HC.ph, A.pulse);
+  }
+}
+static void drawCart(float x, float y, double now, bool parked, float level) {   // a mine cart: an iron-rimmed wooden box on two spoked wheels
+  const uint16_t W1 = rgb(96, 70, 54), W2 = rgb(66, 48, 38), ST = rgb(168, 176, 188), DK = rgb(34, 30, 34); const int bob = parked ? 0 : rnd(tsin(now * 32) * 0.6f);
+  const float by = y + bob; (void)level;
+  R(x - 11, by - 10, 23, 9, W1); R(x - 11, by - 10, 23, 2, ST); R(x - 11, by - 2, 23, 1, W2); R(x - 6, by - 9, 1, 7, W2); R(x + 4, by - 9, 1, 7, W2); R(x - 12, by - 11, 25, 1, ST);
+  for (int wi = 0; wi < 2; wi++) { const int wx = wi ? 6 : -7; R(x + wx - 2, by - 3, 5, 5, DK); const int a = parked ? 0 : ((int)floor(now * 28) & 3); R(x + wx - 2, by - 3, 5, 1, ST); R(x + wx - 2, by + 1, 5, 1, ST); R(x + wx - 1 + (a & 1), by - 2 + ((a >> 1) & 1), 1, 1, rgb(228, 232, 234)); R(x + wx + 1 - (a & 1), by + ((a >> 1) & 1), 1, 1, ST); R(x + wx, by - 1, 1, 1, ST); }
+}
+static void drawCartDust(float x, float y, double now, float level) {   // separate grains behind the rear wheel, bright enough to read in the tunnel
+  const int n = 12 + rnd(level * 4);
+  for (int i = 0; i < n; i++) {
+    const float age = (float)fmod(now * (3.2 + (i % 4) * 0.28) + i * 0.29, 1.0); const float px = x - 14 - rnd(age * (24 + (i % 3) * 8)) - (i % 2), py = y + 1 - rnd(age * (4 + (i % 4) * 2)) + (i % 3) - 1, alpha = (0.78f + level * 0.10f) * (1 - age * 0.55f);
+    if (i % 3 == 0) PA(px, py, i % 4 == 0 ? 4 : 2, i % 5 == 0 ? 2 : 1, 242, 206, 154, alpha); else PA(px, py, i % 4 == 0 ? 4 : 2, i % 5 == 0 ? 2 : 1, 202, 164, 115, alpha);
+  }
+  for (int i = 0; i < 3; i++) { const float phase = (float)fmod(now * 15 + i * 0.37, 1.0); const float px = x - 18 - rnd(phase * 33); PA(px, y + 2 + (i % 2), 4, 1, 248, 220, 178, 0.72f - phase * 0.35f); }   // short separated streaks follow the spinning rear wheel
+}
+static bool nearGap(const Cave& c, float wx, float r) { for (int i = 0; i < c.nGaps; i++) if (fabsf(wx - c.gaps[i]) < r) return true; return false; }
+static void drawRails(const Cave& c, float sc) {   // two iron rails on wooden sleepers, following the sloping floor, from the parked cart on
+  const int x0 = (int)fmaxf(0.0f, (float)rnd(HX + c.cartX - 30 - sc));
+  for (int x = x0 - x0 % 3; x < W; x += 3) { if (nearGap(c, sc + x - HX, 22)) continue; int fy = GY - rnd(labH(c, sc + x - HX)); R(x, fy, 3, 1, rgb(168, 176, 188)); R(x, fy + 2, 3, 1, rgb(90, 96, 108)); }
+  for (int x = -((((int)floorf(sc) % 14) + 14) % 14) - 14; x < W; x += 14) { if (x < x0 || nearGap(c, sc + x - HX, 24)) continue; int fy = GY - rnd(labH(c, sc + x - HX)); R(x, fy + 1, 3, 3, rgb(96, 66, 40)); }
+}
 static void drawBoulder(float cx, float cy, int r, float ang) {   // a huge round rock, turning as it rolls: craters carried round on its face, a shaded edge, a light top
   const uint16_t Ac = rgb(112, 100, 94), Bc = rgb(88, 78, 74), Dc = rgb(60, 52, 50);
   for (int dy = -r; dy <= r; dy++) { int h = (int)floorf(sqrtf((float)(r * r - dy * dy))); R(cx - h, cy + dy, 2 * h, 1, dy > r * 0.55f ? Dc : dy > r * 0.1f ? Bc : Ac); R(cx - h, cy + dy, 2, 1, Dc); R(cx + h - 2, cy + dy, 2, 1, Dc); }
@@ -1162,10 +1226,13 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
   } else {
     drawCaveBg(G, now, dep);
     for (int j = 0; j < 30; j++) { int n = rnd(A.eqH[j]); if (n > 7) n = 7; int x = j * PITCH + 1; static const uint16_t FL[5] = {rgb(255, 226, 96), rgb(255, 177, 48), rgb(248, 114, 30), rgb(224, 60, 25), rgb(176, 38, 25)}; for (int k = 0; k < n; k++) { int y = H - SEG * (k + 1) + 1; R(x, y, 6, SEG_H, FL[4]); R(x + 1, y, 4, SEG_H, FL[(k * 5 / (n > 1 ? n : 1)) < 4 ? (k * 5 / (n > 1 ? n : 1)) : 4]); } }   // the flame equalizer along the floor
+    if (c.cartS) drawRails(c, sc);
+    if (c.cartS == 1 || c.cartS == 2) drawCart((float)rnd(HX + c.cartX - sc), (float)(GY - rnd(labH(c, c.cartX))), now, true, A.level);
     drawLabFeature(c, xl, kind, now);
     for (const CvObs& o : c.obs) if (o.live) { float x = HX + o.wx - sc; if (x > W + 20 || x < -20) continue; int fh = o.kind != CV_LOW ? rnd(labH(c, o.wx)) : 0; gOffY = -fh; drawCaveObs(c, o, x, now); gOffY = 0; }   // things stand on the sloping floor
     for (const CvDrip& d : c.drips) if (d.live) R(d.x, d.y, 1, 3, DRIPC);
     for (const CvSplash& p : c.splash) if (p.live) { int w = 2 + rnd(p.t * 24); R(p.x - (w >> 1), GY - 1, w, 1, DRIPC); }
+    if (c.chase.live) drawChasers(G, now, A);
     const int tyA = GY - rnd(labH(c, sc)) - 17;
     if (c.trap.live) { R(W - 5, tyA - 2, 5, 5, rgb(0, 0, 0)); if ((int)floor(now * 16) & 1) { R(W - 4, tyA - 1, 3, 3, rgb(230, 60, 40)); PA(W - 30, tyA - 6, 30, 13, 255, 80, 40, 0.2f); } }   // the slit flashes before it shoots
     for (const auto& a : c.arrows) if (a.live) drawArrow(a.x, (float)tyA);
@@ -1187,7 +1254,9 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
     else if (ld < 0.4f) mode = HM_HIDE;   // and lands in a crouch, with dust
     if (ld >= 0 && ld < 0.55f) { const float q = ld / 0.55f; for (int sd = -1; sd <= 1; sd += 2) { R(HX + sd * (4 + rnd(q * 14)) - 1, GY - 2 - rnd(q * 3), 3, 2, rgb(126, 116, 100)); R(HX + sd * (2 + rnd(q * 8)) - 1, GY - 1, 2, 1, rgb(160, 150, 130)); } }
     HC.slope = 0.5f * G.sl; HC.wob = G.sl > 0 ? 4 * G.sl : 12 * G.sl;   // uphill he leans in, downhill he leans back
-    drawHero(HX, (float)(rnd(y) + ((c.boulder.live && c.boulder.stop) ? 7 : 0)), now, mode);
+    if (c.cartS == 2) { const float u = cl01(c.bt / 0.5f); AIR_U = 0.5f; drawHero(HX - 1, (float)rnd(gbL - 4 * 9 * u * (1 - u)), now, u < 0.85f ? HM_AIR : HM_CROUCH); drawCart((float)rnd(HX + c.cartX - sc), (float)(GY - rnd(labH(c, c.cartX))), now, true, A.level); }   // the hop into the cart
+    else if (c.cart) { float lift = 0; for (int gi = 0; gi < c.nGaps; gi++) { const float u = (sc - (c.gaps[gi] - 38)) / 76; if (u > 0 && u < 1) lift = 4 * 15 * u * (1 - u); } drawHero(HX - 1, (float)(rnd(y - lift) - 1), now, HM_CROUCH); drawCart((float)HX, (float)rnd(y - lift), now, false, A.level); }   // at a broken place the cart flies over the gap; he crouches low in the cart, hands on the rim
+    else drawHero(HX, (float)(rnd(y) + ((c.boulder.live && c.boulder.stop) ? 7 : 0)), now, mode);
     HC.slope = 0; HC.wob = 0;
   }
   if (c.boulder.live) {   // the near wall of the niche: two pillars and a lintel in front of the tunnel
@@ -1195,7 +1264,7 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
     R(nx - 27, nf - 58, 7, 66, P); R(nx + 20, nf - 58, 7, 66, P); R(nx - 27, nf - 58, 54, 7, P); R(nx - 27, nf - 58, 54, 1, P2); R(nx - 27, nf - 58, 1, 66, P2); R(nx + 26, nf - 58, 1, 66, P2); R(nx - 20, nf - 51, 40, 1, rgb(26, 20, 18));
   }
   for (const Bat& b : c.bats) if (b.live) drawBat(b, A, rgb(150, 100, 190));
-  if (!c.duck && !mv.live && !(ld < 0)) { const int ty = rnd(y) - 22 + (c.jump >= 0 ? 0 : ((int)floorf(HC.ph * 2) & 1)); R(HX + 8, ty + 2, 1, 5, rgb(80, 50, 24)); const int fl = trebleFlame(G, now, 1); R(HX + 7, ty - 2 - fl, 3, 4 + fl, rgb(255, 210, 60)); R(HX + 8, ty - 1 - fl, 1, 2, rgb(255, 246, 192)); }   // the torch in his hand
+  if (!c.duck && !mv.live && !(ld < 0) && !c.cart) { const int ty = rnd(y) - 22 + (c.jump >= 0 ? 0 : ((int)floorf(HC.ph * 2) & 1)); R(HX + 8, ty + 2, 1, 5, rgb(80, 50, 24)); const int fl = trebleFlame(G, now, 1); R(HX + 7, ty - 2 - fl, 3, 4 + fl, rgb(255, 210, 60)); R(HX + 8, ty - 1 - fl, 1, 2, rgb(255, 246, 192)); }   // the torch in his hand
   {   // the torch light: rings, each a step darker than the one inside it
     const float r = 55 + 30 * A.level + G.treble * 8, cx = HX + 8, cy = GY - 20; const float rk[5] = {r, r * 0.83f, r * 0.66f, r * 0.49f, r * 0.32f};
     static const float AL[6] = {0, 0.10f, 0.19f, 0.271f, 0.344f, 0.410f};   // 1 - 0.9^n: n rings darken the dots outside them
@@ -1212,6 +1281,7 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
       }
     }
   }
+  if (c.cart && !mv.live) { float lift = 0; for (int gi = 0; gi < c.nGaps; gi++) { const float u = (sc - (c.gaps[gi] - 38)) / 76; if (u > 0 && u < 1) lift = 4 * 15 * u * (1 - u); } drawCartDust((float)HX, (float)rnd(y - lift + fminf(5.0f, lift * 0.4f)), now, A.level); }   // dust stays visible behind the spinning wheel
 }
 
 static void drawBeach(Game& G, const AudioIn& A, double now) {
