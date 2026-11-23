@@ -33,6 +33,15 @@ int main() {
     printf("%s  tunnel: deepest level %d, doorway reached %d, boulder frames %d, arrow frames %d, cart frames %d, guardian frames %d, left at %.0f s\n", ok ? "ok  " : "FAIL", maxDepth, gate > 0, boulder, arrow, ride, chase, leftAt);
     if (!ok) bad++;
   }
+  {   // the treasury: from the bottom floor up through ladders, gaps and ropes to the pit on the top floor; gold on the way
+    Game G; gameInit(G, 0); setScene(G, SC_CAVERN, 0);
+    static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
+    double t = 0; const float dt = 1.0f / 30; int top = 9, bars = 0; double leftAt = 0;
+    for (int f = 0; f < 30 * 200; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); if (G.scene != SC_CAVERN) { leftAt = t; break; } if (G.cn.lvl < top) top = G.cn.lvl; bars = G.cn.bars; }
+    const bool ok = top == 0 && bars >= 15 && leftAt > 60;
+    printf("%s  treasury: reached floor %d, gold bars %d, left at %.0f s\n", ok ? "ok  " : "FAIL", top, bars, leftAt);
+    if (!ok) bad++;
+  }
   if (bad) return 1;
   printf("game rules passed\n");
   return 0;

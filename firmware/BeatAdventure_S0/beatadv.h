@@ -338,6 +338,7 @@ static void update(State& s, uint32_t nowMs, const int16_t* ring, uint32_t mask,
 // ---------------------------------------------------------------------------------------------------------------------
 // Drawing: the game's picture into the frame buffer (byte-swapped RGB565, as in M5Canvas's buffer).
 // Development aid: jump to the next or the previous stage at once (n / p while the numbers are shown), so that a stage can be reached without playing the ones before it.
+static bool caption(const State& s, const char** text, float* alpha) { return gameCaption(s.game, text, alpha); }   // the few words that may appear on the game screen (the treasure rooms' titles)
 static void jumpStage(State& s, int delta, uint32_t nowMs) {
   int n = ((int)s.game.scene + delta + SC_COUNT) % SC_COUNT;
   s.game.fadeDir = 0; s.game.fade = 0; s.game.hide = false; s.game.quietT = 0;

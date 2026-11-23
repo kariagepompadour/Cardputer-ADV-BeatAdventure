@@ -112,7 +112,38 @@ struct Cave {
   uint8_t roof[128] = {}; int roofN = -2, roofPrev = 28; int cv = 28;   // the ceiling, one column every 8 px, each keeping its height while it scrolls left
 };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_CAVE, SC_COUNT };
+// ---- Stage 9: the treasury (the web demo's "cavern"): a Pitfall II cavern behind the golden door. Ten floors joined by ladders, gaps to jump, ropes over the wide gaps, gold bars on the run, a crowd of guardians at home, and at the top a pit to the river.
+constexpr int NF = 10, CWATER = 96 + 24;   // ten floors, 46 dots apart: floor 0 is the top, floor 9 the bottom; the river is below the bottom floor
+static inline int CFL(int l) { return 96 - 46 * (9 - l); }
+enum StKind : uint8_t { ST_GAP, ST_ROPE, ST_LADUP, ST_PIT };
+struct CavSt { int xs; StKind kind; int lvl; };
+struct CavGoldP { int x, lvl; };
+struct CavTab {   // the route: on each floor from 9 up to 1 an obstacle (a gap, or on floors 6, 3 and 1 a rope over a wide gap) and then a ladder up; on the top floor a pit down to the river
+  CavSt st[19]; CavGoldP gold[19]; int nst = 0, ng = 0;
+  CavTab() { int i = 0, start = 130; const int SP = 350;
+    for (int f = 9; f >= 1; f--) { const int xa = 420 + (i++) * SP, xb = 420 + (i++) * SP; st[nst++] = CavSt{xa, (f == 6 || f == 3 || f == 1) ? ST_ROPE : ST_GAP, f}; st[nst++] = CavSt{xb, ST_LADUP, f};
+      gold[ng++] = CavGoldP{(int)floorf((start + xa) / 2.0f + 0.5f), f}; gold[ng++] = CavGoldP{(int)floorf((xa + xb) / 2.0f + 0.5f), f}; start = xb + 5; }
+    const int xp = 420 + i * SP; st[nst++] = CavSt{xp, ST_PIT, 0}; gold[ng++] = CavGoldP{(int)floorf((start + xp) / 2.0f + 0.5f), 0}; }
+};
+static const CavTab& cavTab() { static const CavTab t; return t; }
+static bool cavSolid(int lvl, float wx) {
+  const CavTab& T = cavTab();
+  for (int i = 0; i < T.nst; i++) { const CavSt& st = T.st[i]; if (fabsf(wx - st.xs) > 40) continue;
+    if (st.kind == ST_GAP && st.lvl == lvl && fabsf(wx - st.xs) < 18) return false;
+    if (st.kind == ST_ROPE && st.lvl == lvl && fabsf(wx - st.xs) < 35) return false;   // a wide gap: only a rope gets across
+    if (st.kind == ST_LADUP && lvl == st.lvl - 1 && fabsf(wx - st.xs - 5) < 9) return false;   // the ladder comes up through a hole in the floor above
+    if (st.kind == ST_PIT && fabsf(wx - st.xs) < 26) return false; }   // the pit is a shaft through every floor
+  return true;
+}
+enum CvnMk : uint8_t { CM_UP, CM_SWING, CM_DROP, CM_MISS };
+struct Spark { bool live = false; float x = 0, y = 0, vx = 0, vy = 0, t = 0; };
+struct Cavern {
+  float scroll = 0, t = 0, jump = -1, jd = JD, jh = JH; int lvl = 9, bars = 0;
+  struct { bool live = false; CvnMk kind = CM_UP; float t = 0, xs = 0, from = 0; } mv;
+  bool done[19] = {}, taken[19] = {}; Spark sparks[24]; Bat bats[2];
+};
+
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_CAVE, SC_CAVERN, SC_COUNT };
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -129,6 +160,7 @@ struct Game {
   Boat bt;
   River rv;
   Cave cv;
+  Cavern cn;
   float treble = 0;
 };
 
@@ -138,6 +170,7 @@ static void setScene(Game& G, Scene s, double now) {
   if (s == SC_WALL) G.wl = Wall();
   if (s == SC_VINES) G.vn = Vines();
   if (s == SC_BOAT) G.bt = Boat();
+  if (s == SC_CAVERN) { uint32_t r = G.bc.rng; G.cn = Cavern(); G.bc.rng = r; }
   if (s == SC_CAVE) { uint32_t r = G.bc.rng; G.cv = Cave(); G.bc.rng = r; G.cv.lastArr = now; G.cv.nextArrow = now + 6; G.cv.roofN = -2; }
   if (s == SC_RIVER) { uint32_t r = G.bc.rng; G.rv = River(); G.bc.rng = r; G.rv.lastArr = now; G.rv.nextLife = now + 2; }
   if (s == SC_BEACH || s == SC_FOREST || s == SC_FOREST3) { uint32_t r = G.bc.rng; G.bc = Beach(); G.bc.rng = r; G.bc.forest = (s != SC_BEACH); G.bc.hills = (s == SC_FOREST); G.bc.lastArr = now; G.bc.shipStart = now; G.bc.nextTree = now + 3; G.bc.nextHunter = now + 8; G.sl = 0; G.hide = false; G.quietT = 0; }
@@ -414,13 +447,39 @@ static void updateCave(Game& G, const AudioIn& A, float dt, double now) {
   if (!L.mv.live && L.wx - L.scroll <= (L.stage == 2 ? 14 : 5) && !G.fadeDir) { L.mv = CvMv(); L.mv.live = true; L.mv.kind = L.stage == 2 ? MV_GATE : L.stage == 0 ? MV_DOWN : MV_UP; }
   if (L.mv.live) {
     CvMv& m = L.mv;
-    if (m.kind == MV_GATE) { m.t += dt; HC.ph += dt / A.T * 0.7f; if (m.t > 1.2f && !G.fadeDir) switchTo(G, SC_LINER); }   // through the golden doorway into the treasure store (not ported yet: the story starts again)
+    if (m.kind == MV_GATE) { m.t += dt; HC.ph += dt / A.T * 0.7f; if (m.t > 1.2f && !G.fadeDir) switchTo(G, SC_CAVERN); }   // through the golden doorway into the treasure store
     else if (m.kind == MV_DOWN) { m.t += dt; m.d = 135 * powf(fminf(1.0f, m.t / 1.0f), 2); if (m.t >= 1.0f) { L.depth++; L.stage++; m.live = false; L.ld = 0; L.pw = L.wx; L.wx = L.scroll + (L.depth == 1 ? 1000 : 560); } }
     else if (m.mount) { m.mt += dt; m.q = cl01(m.mt / 1.8f); m.z = LAB_TOP - 12 + 12 * sm01(m.q); if (m.q >= 1) { L.depth--; L.stage++; m.live = false; L.ld = 1; L.pw = L.wx; L.wx = L.scroll + 600; } }
     else { m.z += 40 * dt; if (m.z >= LAB_TOP - 12) { m.z = LAB_TOP - 12; m.mount = true; m.mt = 0; } }
   }
   // the slope under him leans him in or back
   { const float sl = (labH(L, L.scroll + 4) - labH(L, L.scroll - 4)) / 8; G.sl += (fmaxf(-1.0f, fminf(1.0f, sl / 0.5f)) - G.sl) * 0.2f; }
+}
+
+static void updateCavern(Game& G, const AudioIn& A, float dt, double now) {
+  Cavern& C = G.cn; const CavTab& T = cavTab(); C.t += dt; C.scroll += V * G.sp * dt;
+  if (C.jump >= 0) { C.jump += dt; if (C.jump > C.jd) C.jump = -1; }
+  if (!C.mv.live && C.lvl == NF - 1 && C.jump < 0 && !cavSolid(C.lvl, C.scroll)) { C.mv.live = true; C.mv.kind = CM_MISS; C.mv.t = 0; C.mv.from = (float)CFL(C.lvl); }   // a short jump can miss the first gap and drop into the river
+  if (!C.mv.live) {
+    for (int i = 0; i < T.nst; i++) { const CavSt& st = T.st[i]; const float dx = st.xs - C.scroll;
+      if (st.lvl != C.lvl || C.done[i]) continue;
+      if (st.kind == ST_GAP && C.jump < 0 && dx <= 28 && dx > 0) { const bool shortJ = C.lvl == NF - 1 && A.sounding && A.level < 0.55f; C.jd = shortJ ? 0.36f : A.sounding ? JD : 0.82f; C.jh = shortJ ? 20.0f : JH; C.jump = 0; C.done[i] = true; }   // a slow silent run still clears an ordinary gap
+      else if (st.kind == ST_LADUP && dx <= 0 && C.jump < 0) { C.scroll = (float)st.xs; C.mv.live = true; C.mv.kind = CM_UP; C.mv.t = 0; C.done[i] = true; }
+      else if (st.kind == ST_ROPE && dx <= 29 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_SWING; C.mv.t = 0; C.mv.xs = (float)st.xs; C.done[i] = true; }   // a rope over a wide gap: he grabs it and swings across
+      else if (st.kind == ST_PIT && dx <= 0 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_DROP; C.mv.t = 0; C.mv.from = (float)CFL(0); C.done[i] = true; } }
+    for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i] || p.lvl != C.lvl || C.jump >= 0) continue;   // gold bars are picked up on the run
+      if (fabsf(p.x - C.scroll) < 7) { C.taken[i] = true; C.bars++; for (int k = 0; k < 8; k++) for (Spark& s : C.sparks) if (!s.live) { s.live = true; s.x = HX + 4; s.y = (float)(CFL(C.lvl) - 8); s.vx = (rand01(G) - 0.5f) * 60; s.vy = -30 - rand01(G) * 40; s.t = 0; break; } } }
+  } else {
+    auto& m = C.mv; m.t += dt;
+    if (m.kind == CM_SWING) { if (m.xs - C.scroll < -29) m.live = false; }
+    else if (m.kind == CM_DROP || m.kind == CM_MISS) { const float splashAt = sqrtf((CWATER - m.from) / 300); if (m.t > splashAt + 0.12f && !G.fadeDir) switchTo(G, SC_LINER); }   // the river carries him into the waterway in the web demo; until it is ported, the story starts again
+    else if (m.t >= 2.0f) { C.lvl--; m.live = false; }
+  }
+  for (Spark& s : C.sparks) if (s.live) { s.t += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 120 * dt; if (s.t >= 0.7f) s.live = false; }
+  // bats
+  if (A.beatNow && A.sounding && !G.fadeDir && A.level > 0.25f && rand01(G) < 0.1f) { int n = 0; for (const Bat& b : C.bats) if (b.live) n++; if (n < 1) for (Bat& b : C.bats) if (!b.live) { b = Bat(); b.live = true; b.x = W + 8; b.y = b.y0 = 64; break; } }
+  for (Bat& b : C.bats) if (b.live) { b.t += dt; b.x -= (62 + V * G.sp * 0.3f) * dt; float u = b.t * 1.7f; b.y = b.y0 + (fabsf(u - floorf(u) - 0.5f) * 4 - 1) * 12; if (b.x <= -10) b.live = false; }
+  (void)now;
 }
 
 static void updateWall(Game& G, const AudioIn& A, float dt, double now) {
@@ -469,7 +528,8 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop)))) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop))) || (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind != CM_SWING)) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  if (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind == CM_SWING) G.sp = 0.7f;   // swinging on a rope
   if (G.scene == SC_CAVE) {   // in the mine cart the tunnel races past, faster in loud music
     Cave& L = G.cv; L.vm = (L.cart && !L.mv.live) ? (1.45f + 0.5f * A.level) * (0.25f + 0.75f * sm01(cl01(L.rideT / 1.5f))) * fmaxf(0.6f, fminf(1.6f, 1 - 2.2f * (labH(L, L.scroll + 4) - labH(L, L.scroll - 4)) / 8)) : 1.0f; G.sp *= L.vm; }
   HC.sneak = G.sneak;
@@ -481,6 +541,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
   else if (G.scene == SC_RIVER) updateRiver(G, A, dt, now);
   else if (G.scene == SC_CAVE) updateCave(G, A, dt, now);
+  else if (G.scene == SC_CAVERN) updateCavern(G, A, dt, now);
   else if (G.scene == SC_BOAT) {
     Boat& b = G.bt; b.t += dt;
     b.phase = b.t < 1.6f ? BT_SHORE : b.t < 2.8f ? BT_BOARD : b.t < 8.4f ? BT_CRUISE : b.t < 11 ? BT_LIP : b.t < 13.5f ? BT_DROP : BT_SPLASH;
@@ -1156,14 +1217,16 @@ static void drawLabFeature(const Cave& c, float xl, int kind, double now) {   //
 }
 
 
-static void drawWarrior(float x, float fy, double now, int i, float ph, float pulse) {   // an Aztec temple guardian, built like the hero: a feathered headdress, a cotton tunic with a sash and loincloth, gold bands, a round shield on the near arm and a spear in the far hand
+static void drawWarrior(float x, float fy, double now, int i, float ph, float pulse, bool stand = false) {   // an Aztec temple guardian, built like the hero: a feathered headdress, a cotton tunic with a sash and loincloth, gold bands, a round shield on the near arm and a spear in the far hand
   const Col SKc{150, 92, 58}; const uint16_t TN = rgb(236, 150, 60), TQ = rgb(40, 200, 190), RD = rgb(214, 50, 40), GR = rgb(30, 170, 80), G1 = rgb(252, 208, 64), G1D = rgb(151, 125, 38), WD = rgb(120, 80, 40), OB = rgb(30, 24, 30), SK = px565(SKc);
   const float p = ph + i * 0.27f, hx = x; setLimbs(SKc, Col{184, 134, 66}, SKc, SKc);
-  const float hy = fy - fmaxf(runLeg(p, hx, 0).ay, runLeg(p + 0.5f, hx, 0).ay) - 1; const Leg lA = runLeg(p, hx, hy), lB = runLeg(p + 0.5f, hx, hy);
-  const float lean = (12 + 3 * pulse) * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+  auto legF = [&](float q, float y0) { return stand ? legAF(hx, y0, q < 0.5f ? 5.0f : -5.0f, 4) : runLeg(q, hx, y0); };   // a standing guard: the legs at rest, the spear planted upright
+  const float hy = fy - fmaxf(legF(p, 0).ay, legF(p + 0.5f, 0).ay) - 1; const Leg lA = legF(p, hy), lB = legF(p + 0.5f, hy);
+  const float lean = stand ? 2 * DEG : (12 + 3 * pulse) * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
   drawLeg(lB, hx, hy, true);
-  const float pump = sinf(2 * (float)M_PI * p); const Pt hf = armTo(sx, sy, sx + 7 + pump, sy - 3 + pump * 2, true);   // the arms pump with the stride; the far hand grips a spear, held forward and up
-  seg(hf.x - 6, hf.y + 7, hf.x + 10, hf.y - 8, WD, 1); R(hf.x + 10, hf.y - 10, 2, 2, OB); R(hf.x + 8, hf.y - 7, 1, 1, RD);
+  const float pump = stand ? 0.0f : sinf(2 * (float)M_PI * p); const Pt hf = stand ? armTo(sx, sy, sx + 5, sy + 4, true) : armTo(sx, sy, sx + 7 + pump, sy - 3 + pump * 2, true);   // the arms pump with the stride; the far hand grips a spear
+  if (stand) { seg(hf.x, fy, hf.x, fy - 36, WD, 1); R(hf.x - 1, fy - 40, 3, 4, OB); R(hf.x - 1, fy - 36, 3, 1, RD); }
+  else { seg(hf.x - 6, hf.y + 7, hf.x + 10, hf.y - 8, WD, 1); R(hf.x + 10, hf.y - 10, 2, 2, OB); R(hf.x + 8, hf.y - 7, 1, 1, RD); }
   seg(hx, hy, sx, sy, TN, 4); seg(hx - 1, hy - 3, sx + 1, sy + 2, WHITE565, 1);   // the tunic, a pale sash across it
   R(hx - 2, hy, 5, 3, RD); R(hx - 2, hy, 5, 1, G1); R(hx - 3, hy + 1, 1, 2, RD);   // the loincloth
   R(sx - 1, sy - 4, 4, 4, SK); R(sx + 2, sy - 3, 1, 1, OB); R(sx - 1, sy - 4, 1, 4, OB); R(sx - 2, sy - 5, 6, 1, G1);   // the head: hair, an eye, a gold band
@@ -1284,6 +1347,116 @@ static void drawCave(Game& G, const AudioIn& A, double now) {
   if (c.cart && !mv.live) { float lift = 0; for (int gi = 0; gi < c.nGaps; gi++) { const float u = (sc - (c.gaps[gi] - 38)) / 76; if (u > 0 && u < 1) lift = 4 * 15 * u * (1 - u); } drawCartDust((float)HX, (float)rnd(y - lift + fminf(5.0f, lift * 0.4f)), now, A.level); }   // dust stays visible behind the spinning wheel
 }
 
+// ---- The treasury, drawn.
+static void drawMural(int k, float x, float y, double now, bool glow) {   // wall paintings in the style of the Aztec codices (the three portraits use the web demo's drawn stand-ins)
+  const uint16_t CR = rgb(222, 204, 160), BK = rgb(26, 20, 22), TQ = rgb(30, 130, 112), RD = rgb(200, 48, 38), OR = rgb(226, 128, 40), GD = rgb(244, 196, 56), PALEG = rgb(255, 240, 168);
+  R(x, y, 52, 36, BK); R(x + 1, y + 1, 50, 34, CR); R(x + 1, y + 1, 50, 2, RD); R(x + 1, y + 33, 50, 2, RD);   // paper with a red border
+  for (int i = 0; i < 12; i++) { R(x + 2 + i * 4, y + 1, 2, 1, BK); R(x + 4 + i * 4, y + 34, 2, 1, BK); }
+  if (k == 2) {   // a face between two columns of squares
+    const uint16_t c1[3] = {TQ, GD, RD}, c2[3] = {RD, TQ, GD};
+    for (int i = 0; i < 6; i++) { R(x + 4, y + 5 + i * 5, 3, 3, c1[i % 3]); R(x + 45, y + 5 + i * 5, 3, 3, c2[i % 3]); }
+    R(x + 5, y + 3, 42, 30, WHITE565);
+    R(x + 12, y + 7, 28, 23, TQ); R(x + 15, y + 10, 22, 17, GD); R(x + 16, y + 6, 20, 7, RD); R(x + 20, y + 16, 3, 2, BK); R(x + 30, y + 16, 3, 2, BK); R(x + 23, y + 22, 8, 2, RD);
+    return; }
+  if (k == 4 || k == 5) { R(x + 3, y + 3, 46, 30, OR); R(x + 9, y + 12, 9, 7, GD); R(x + 33, y + 12, 9, 7, GD); R(x + 20, y + 24, 12, 3, TQ); return; }   // the robot and the rabbit portraits' stand-in
+  if (k == 3) {   // the Sun Stone: concentric rings of rays, glyph sectors and dots round a gold face with a red tongue; the face glows on the beat
+    const float cx = x + 26, cy = y + 18;
+    for (int yy = -16; yy <= 16; yy++) for (int xx = -16; xx <= 16; xx++) {
+      const float d = sqrtf((float)(xx * xx + yy * yy)); if (d > 16.2f) continue;
+      const float an = atan2f((float)yy, (float)xx) + 3.1416f; const int s20 = (int)floorf(an / 0.314f), s45 = (int)floorf(an / 0.785f); uint16_t c;
+      if (d > 15.2f) c = BK;
+      else if (d > 12.8f) c = ((s20 & 1) && d > 13.6f && d < 14.6f) ? GD : TQ;   // outer turquoise ring with gold dots
+      else if (d > 10.8f) c = (s20 & 1) ? RD : OR;   // ring of rays
+      else if (d > 9.8f) c = BK;
+      else if (d > 7.8f) c = (s45 & 1) ? TQ : OR;   // glyph sectors
+      else if (d > 7) c = BK;
+      else c = glow ? PALEG : GD;   // the gold face
+      R(cx + xx, cy + yy, 1, 1, c); }
+    for (int i = 0; i < 4; i++) { const float an = 0.785f + i * 1.571f; R(cx + cosf(an) * 8.8f - 1, cy + sinf(an) * 8.8f - 1, 2, 2, RD); }   // four glyph squares
+    R(cx - 5, cy - 4, 3, 3, BK); R(cx + 2, cy - 4, 3, 3, BK); R(cx - 4, cy - 3, 1, 1, TQ); R(cx + 3, cy - 3, 1, 1, TQ); R(cx - 3, cy + 1, 7, 2, BK); R(cx - 2, cy + 2, 5, 4, RD); R(cx - 1, cy + 2, 3, 1, CR);
+    return; }
+  // a stiff profile figure (k 0: turquoise body facing right, k 1: black body facing left): striding legs, a belly disc, a tall feather fan, one arm up with a staff
+  const bool fl = k == 1; const uint16_t body = fl ? BK : TQ, fan = fl ? RD : OR; const float ox = x;
+  struct Rc { int x, y, w, h; uint16_t c; };
+  const Rc rects[] = {{20, 24, 3, 5, body}, {17, 28, 3, 3, body}, {26, 24, 3, 5, body}, {29, 28, 3, 3, body}, {13, 30, 7, 2, RD}, {29, 30, 7, 2, RD},   // legs and sandals
+    {19, 21, 11, 3, GD}, {20, 11, 10, 11, body}, {20, 11, 10, 2, RD}, {22, 14, 6, 6, BK},   // loincloth, torso, belt
+    {24, 5, 7, 7, body}, {31, 8, 2, 2, body}, {23, 4, 9, 2, RD},   // head, nose, band
+    {30, 14, 7, 2, body}, {36, 11, 3, 5, OR}, {20, 14, 2, 4, body}, {14, 17, 7, 2, body}, {10, 16, 4, 5, fan},   // arms: front one raised, back one holding a fan
+    {41, 5, 2, 26, TQ}, {40, 3, 4, 3, GD}, {41, 17, 2, 2, RD}, {41, 24, 2, 2, RD}};   // a staff with gold top
+  auto X = [&](int lx, int w) { return ox + (fl ? 52 - lx - w : lx); };
+  for (const Rc& r : rects) R(X(r.x, r.w) - 1, y + r.y - 1 + 1, r.w + 2, r.h + 2, BK);
+  for (int i = 0; i < 5; i++) { const int fx = 17 + i * 3, fh = 5 - ((i == 0 || i == 4) ? 1 : 0); R(X(fx, 2) - 1, y + 3 - fh + 4 - 1, 4, fh + 2, BK); }
+  for (const Rc& r : rects) R(X(r.x, r.w), y + r.y + 1, r.w, r.h, r.c);
+  for (int i = 0; i < 5; i++) { const int fx = 17 + i * 3, fh = 5 - ((i == 0 || i == 4) ? 1 : 0); R(X(fx, 2), y + 3 - fh + 4, 2, fh, (i & 1) ? RD : fan); }   // the feather fan on the head
+  R(X(23, 2), y + 14, 2, 2, BK); R(X(23, 2), y + 14, 1, 1, CR);
+  R(X(23, 6), y + 15 + 1, 6, 4, glow ? PALEG : GD); R(X(25, 2), y + 17 + 1, 2, 2, RD);   // the belly disc glows on the beat
+  R(X(27, 3), y + 8 + 1, 3, 2, CR); R(X(29, 1), y + 9 + 1, 1, 1, RD); R(X(28, 4), y + 11 + 1, 4, 1, RD);   // eye and mouth
+  R(X(41, 2), y + 3, 2, 1, BK);
+  (void)now;
+}
+static void drawGold(float x, float y, double now) {   // a pile of gold bars on a ledge, glinting
+  const uint16_t G1 = rgb(252, 208, 64), G2 = rgb(190, 140, 30), G3 = rgb(255, 240, 150);
+  for (int r = 0; r < 3; r++) for (int c = 0; c < 3 - r; c++) { const float bx = x - 7 + c * 5 + r * 2.5f; R(bx, y - 3 - r * 3, 5, 3, G1); R(bx, y - 3 - r * 3, 5, 1, G3); R(bx, y - 1 - r * 3, 5, 1, G2); }
+  if ((int)floor(now / 0.3) & 1) { R(x + 6, y - 11, 1, 3, WHITE565); R(x + 5, y - 10, 3, 1, WHITE565); }
+}
+static void drawResident(float x, float fy, double now, int kind, int seed, float pulse) {   // the guardians who live in the cavern: some stand guard with a planted spear, some walk their ledge, some sit by a fire, some sleep on a mat
+  const uint16_t SK = rgb(150, 92, 58), TN = rgb(236, 150, 60), TQ = rgb(40, 200, 190), RD = rgb(214, 50, 40), GR = rgb(30, 170, 80), G1 = rgb(252, 208, 64);
+  if (kind == 0) drawWarrior(x, fy, now, seed % 3, 0, pulse, true);
+  else if (kind == 1) { const int dir = cosf((float)fmod(now * 0.5 + seed, 6.283185307179586)) > 0 ? 1 : -1; const int px = rnd(x + tsin(now * 0.5 + seed) * 26); if (dir < 0) mirrorOn(px); drawWarrior((float)px, fy, now, seed % 3, (float)fmod(now * 1.1 + seed * 0.3, 1.0), pulse); if (dir < 0) mirrorOff(); }
+  else if (kind == 2) { R(x - 7, fy - 3, 11, 3, SK); R(x - 3, fy - 12, 7, 9, TN); R(x - 3, fy - 8, 7, 1, WHITE565); R(x - 2, fy - 17, 5, 4, SK); R(x + 1, fy - 16, 1, 1, rgb(0, 0, 0)); R(x - 3, fy - 18, 7, 1, G1); R(x - 4, fy - 23, 1, 5, TQ); R(x - 2, fy - 25, 1, 7, RD); R(x, fy - 24, 1, 6, GR); R(x + 2, fy - 22, 1, 4, TQ); seg(x + 3, fy - 9, x + 8 + ((int)floor(now * 2 + seed) & 1), fy - 6, SK, 1); }
+  else { const int br = (int)floor(now * 1.2 + seed) & 1; R(x - 10, fy - 2, 22, 2, rgb(190, 60, 50)); R(x - 9, fy - 6 - br, 13, 4, TN); R(x - 15, fy - 5, 6, 3, SK); R(x + 4, fy - 7, 5, 4, SK); R(x + 9, fy - 8, 7, 2, TQ); R(x + 9, fy - 6, 6, 2, RD); R(x + 6, fy - 5, 1, 1, rgb(0, 0, 0)); if ((int)floor(now * 1.5 + seed) & 1) { R(x + 12, fy - 14, 2, 1, WHITE565); R(x + 14, fy - 18, 2, 1, WHITE565); } }   // sleeping, with a drifting z
+}
+static void drawCavern(Game& G, const AudioIn& A, double now) {
+  const Cavern& C = G.cn; const CavTab& T = cavTab(); const float sc = C.scroll; const auto& m = C.mv;
+  const uint16_t ORG = rgb(212, 124, 42), ORD = rgb(150, 84, 26);
+  R(0, 0, W, H, rgb(8, 7, 10));
+  float hy = (float)CFL(C.lvl);   // the camera follows his floor, the ladder climb and the fall
+  if (m.live && m.kind == CM_UP) hy = lp((float)CFL(C.lvl), (float)CFL(C.lvl - 1), cl01(m.t / 2.0f)); else if (m.live && (m.kind == CM_DROP || m.kind == CM_MISS)) hy = fminf((float)CWATER, m.from + 300 * m.t * m.t);
+  const int cam = rnd(96 - hy); auto vis = [&](float y) { return y + cam > -50 && y + cam < H + 12; };
+  gOffY = cam; HC.slope = 0; HC.wob = 0; HERO_PULSE = A.pulse;
+  for (int lv = 0; lv < NF; lv++) { if (!vis((float)(CFL(lv) - 22))) continue; for (int k = (int)floorf(sc * 0.4f / 130) - 1; k < (int)floorf(sc * 0.4f / 130) + 3; k++) { const int x = rnd(k * 130 - sc * 0.4f + 10 + (lv & 1) * 65), mm = (((k + lv) % 6) + 6) % 6; drawMural(mm, (float)x, (float)(CFL(lv) - 40), now, A.pulse > 0.5f); } }   // wall paintings, one row per floor, drifting slowly
+  for (int lv = 0; lv < NF; lv++) { const int F = CFL(lv); if (!vis((float)F)) continue; for (int x = 0; x < W; x += 4) { const float wx = sc + x - HX; if (!cavSolid(lv, wx)) continue; const int j = ((((int)floorf(wx / 4)) * 7) % 3 + 3) % 3; R(x, F, 4, 4, ORG); R(x, F + 4, 4, 3 + j, ORD); } }   // the ledges: orange rock, a ragged underside
+  for (int i = 0; i < T.nst; i++) { const CavSt& st = T.st[i]; if (st.kind != ST_LADUP) continue; const int xl = rnd(HX + st.xs + 5 - sc); if (xl < -10 || xl > W + 10) continue; const int top = CFL(st.lvl - 1) - 14, bot = CFL(st.lvl); if (!vis((float)top) && !vis((float)bot)) continue;
+    R(xl - 4, top, 1, bot - top, rgb(176, 120, 60)); R(xl + 4, top, 1, bot - top, rgb(176, 120, 60)); for (int yy = bot; yy > top; yy -= 6) R(xl - 4, yy, 9, 1, rgb(220, 160, 80)); }   // the ladders: through a hole in the floor above
+  for (int lv = 0; lv < NF; lv++) { const int F = CFL(lv); if (!vis((float)F)) continue;   // what lives on each floor: crates, chests, braziers, jars, mats
+    for (int k = (int)floorf((sc - HX) / 170) - 1; k < (int)floorf((sc - HX + W) / 170) + 2; k++) { if (((k + lv) & 1) != 0) continue; const int kk = k + lv * 3 + 20; const float wx = k * 170.0f + 60; const int x = rnd(HX + wx - sc);
+      bool skip = !cavSolid(lv, wx); for (int i = 0; i < T.nst && !skip; i++) if (fabsf(T.st[i].xs + 5 - wx) < 40 && (T.st[i].lvl == lv || T.st[i].kind == ST_LADUP)) skip = true; for (int i = 0; i < T.ng && !skip; i++) if (T.gold[i].lvl == lv && fabsf(T.gold[i].x - wx) < 36) skip = true; if (skip) continue;
+      const int km5 = kk % 5;
+      if (km5 == 3) { R(x - 8, F - 8, 9, 8, rgb(130, 84, 40)); R(x - 8, F - 8, 9, 1, rgb(176, 120, 60)); R(x - 8, F - 4, 9, 1, rgb(90, 56, 26)); R(x + 1, F - 6, 8, 6, rgb(130, 84, 40)); R(x + 1, F - 6, 8, 1, rgb(176, 120, 60)); R(x - 5, F - 15, 8, 7, rgb(130, 84, 40)); R(x - 5, F - 15, 8, 1, rgb(176, 120, 60)); R(x - 2, F - 5, 2, 2, rgb(252, 208, 64)); }   // stacked crates of treasure
+      else if (km5 == 4) { R(x - 7, F - 6, 14, 6, rgb(130, 84, 40)); R(x - 7, F - 6, 14, 1, rgb(176, 120, 60)); R(x - 7, F - 9, 14, 3, rgb(176, 120, 60)); R(x - 7, F - 11, 14, 2, rgb(252, 208, 64)); R(x - 4, F - 12, 3, 1, rgb(255, 240, 150)); R(x + 1, F - 12, 5, 1, rgb(252, 208, 64)); R(x - 1, F - 4, 3, 3, rgb(252, 208, 64)); if ((int)floor(now * 3 + kk) & 1) { R(x + 4, F - 16, 1, 3, WHITE565); R(x + 3, F - 15, 3, 1, WHITE565); } }   // an open chest brimming with gold
+      else if (kk % 3 == 0) { const int fl = trebleFlame(G, now, (float)kk); PA(x - 18, F - 30, 36, 30, 255, 150, 40, 0.10f + 0.04f * G.treble); R(x - 1, F - 9, 2, 9, ORD); R(x - 4, F - 11, 8, 3, rgb(120, 70, 30)); R(x - 3, F - 17 - fl, 6, 6 + fl, rgb(252, 160, 40)); R(x - 1, F - 15 - fl, 2, 4, rgb(255, 240, 160)); }   // a brazier: someone lives here
+      else if (km5 == 1) { R(x - 3, F - 8, 7, 8, rgb(176, 92, 52)); R(x - 2, F - 10, 5, 2, rgb(176, 92, 52)); R(x - 3, F - 5, 7, 1, rgb(40, 190, 180)); R(x + 4, F - 6, 2, 4, rgb(176, 92, 52)); }   // a clay jar with a painted band
+      else { R(x - 8, F - 2, 16, 2, rgb(190, 60, 50)); R(x - 8, F - 2, 16, 1, rgb(252, 208, 64)); R(x - 6, F - 3, 12, 1, rgb(40, 190, 180)); }   // a woven mat
+      if (lv > 0 && (kk & 2)) { const int Tp = CFL(lv - 1); R(x - 3, Tp + 8, 7, 16, rgb(196, 56, 46)); R(x - 3, Tp + 8, 7, 2, rgb(252, 208, 64)); R(x - 1, Tp + 12, 3, 3, rgb(40, 190, 180)); R(x - 3, Tp + 24, 3, 3, rgb(196, 56, 46)); R(x + 1, Tp + 24, 3, 3, rgb(196, 56, 46)); } } }   // and a banner hangs from the ledge above
+  gAlpha = 0.82f;   // a crowd of guardians at home on every floor, a little back from the edge so that he runs in front of them
+  for (int lv = 0; lv < NF; lv++) { if (!vis((float)CFL(lv))) continue; for (int k = (int)floorf((sc - HX) / 48) - 1; k < (int)floorf((sc - HX + W) / 48) + 2; k++) {
+      const uint32_t hh = (uint32_t)(k + lv * 131) * 2654435761u; if (((hh >> 8) % 20) > 2) continue; const float wx = k * 48.0f + 12 + (hh >> 12) % 24; const int x = rnd(HX + wx - sc);
+      if (x < -30 || x > W + 30 || !cavSolid(lv, wx - 14) || !cavSolid(lv, wx + 14) || !cavSolid(lv, wx)) continue; bool skip = false;
+      for (int i = 0; i < T.nst && !skip; i++) if (fabsf(T.st[i].xs + 5 - wx) < 34) skip = true; for (int i = 0; i < T.ng && !skip; i++) if (T.gold[i].lvl == lv && fabsf(T.gold[i].x - wx) < 20) skip = true; if (skip) continue;
+      static const int KIND[6] = {0, 1, 2, 3, 0, 1}; drawResident((float)x, (float)(CFL(lv) - 1), now, KIND[(hh >> 16) % 6], (int)((hh >> 20) % 9), A.pulse); } }
+  gAlpha = 1.0f;
+  for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i]) continue; const int x = rnd(HX + p.x - sc); if (x > -10 && x < W + 10 && vis((float)CFL(p.lvl))) drawGold((float)x, (float)CFL(p.lvl), now); }
+  R(0, CWATER, W, 300, rgb(30, 50, 200)); for (int x = 0; x < W; x += 4) { const int wy = CWATER + rnd(tsin((x + now * 40) * 0.12) * 1); R(x, wy, 4, 2, rgb(110, 140, 255)); }   // the river below
+  { const int wy0 = (int)floorf((-cam - 10) / 6.0f) * 6; R(W - 12, wy0, 12, CWATER - wy0, rgb(150, 110, 50)); for (int y = wy0; y < CWATER; y += 6) R(W - 12 + (((y % 5) + 5) % 5), y, 5, 3, rgb(110, 76, 32)); }   // the rock wall at the right
+  for (int i = 0; i < T.nst; i++) { const CavSt& st = T.st[i]; if (st.kind != ST_ROPE) continue; const int xa = rnd(HX + st.xs - sc); if (xa < -50 || xa > W + 50 || !vis((float)CFL(st.lvl))) continue;   // a rope hung
+    const int att = CFL(st.lvl) - 44; float ex = (float)(xa + rnd(3 * tsin(now * 2))), ey = (float)(att + 36);
+    if (m.live && m.kind == CM_SWING && st.lvl == C.lvl) { const float dx = st.xs - sc, fy = att + sqrtf(fmaxf(1.0f, 36 * 36 - fminf(35 * 35, dx * dx))) + 23; ex = HX + 3; ey = fy - 23; }
+    R(xa - 3, att - 4, 6, 4, ORD); seg((float)xa, (float)att, ex, ey, rgb(200, 160, 96), 1); for (int k = 1; k < 6; k++) R((float)rnd(lp((float)xa, ex, k / 6.0f)) - 1, (float)rnd(lp((float)att, ey, k / 6.0f)), 2, 1, rgb(140, 100, 56)); R(ex - 1, ey, 3, 3, rgb(200, 160, 96)); }
+  float y = (float)CFL(C.lvl); HeroMode mode = HM_RUN;
+  if (m.live && (m.kind == CM_DROP || m.kind == CM_MISS)) { const float yy = m.from + 300 * m.t * m.t; y = fminf((float)(CWATER + 2), (float)rnd(yy)); if (yy > CWATER) R(HX - 8, CWATER - 2, 16, 3, WHITE565); drawHero(HX, y, now, HM_PLUNGE); }
+  else if (m.live && m.kind == CM_SWING) { const float dx = m.xs - sc; SWING_K = fmaxf(-1.0f, fminf(1.0f, dx / 29)); drawHero(HX, (float)rnd(CFL(C.lvl) - 44 + sqrtf(fmaxf(1.0f, 36 * 36 - fminf(35 * 35, dx * dx))) + 23), now, HM_SWING); }
+  else if (m.live) { const float q = cl01(m.t / 2.0f); const int hy2 = rnd(lp((float)CFL(C.lvl), (float)CFL(C.lvl - 1), q)), z = 40 + (CFL(C.lvl) - hy2); gOffY = cam + hy2 - GY; drawLadderHero(HX, (float)z, 1); gOffY = cam; }
+  else { if (C.jump >= 0) { const float u = C.jump / C.jd; y = CFL(C.lvl) - 4 * C.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; } drawHero(HX, (float)rnd(y), now, mode); }
+  for (const Spark& s : C.sparks) if (s.live) R(s.x, s.y, 2, 2, ((int)floor(s.t * 20) & 1) ? WHITE565 : rgb(252, 208, 64));
+  gOffY = 0;
+  for (const Bat& b : C.bats) if (b.live) drawBat(b, A);
+  if (C.t < 3.2f) { const float a = fminf(fminf(1.0f, C.t / 0.5f), (3.2f - C.t) / 0.6f); fillA(60, 22, 120, 14, 0, 0, 0, 0.55f * fmaxf(0.0f, a)); }   // a caption as he arrives (the words are drawn by the sketch)
+}
+static bool gameCaption(const Game& G, const char** text, float* alpha) {   // the few words that may appear on the game screen
+  if (G.scene == SC_CAVERN && G.cn.t < 3.2f) { *text = "THE TREASURY"; *alpha = fminf(fminf(1.0f, G.cn.t / 0.5f), (3.2f - G.cn.t) / 0.6f); return true; }
+  return false;
+}
+
 static void drawBeach(Game& G, const AudioIn& A, double now) {
   const Beach& b = G.bc;
   const float sc = b.scroll;
@@ -1338,7 +1511,7 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else if (G.scene == SC_RIVER) drawRiver(G, A, now); else if (G.scene == SC_CAVE) drawCave(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else if (G.scene == SC_RIVER) drawRiver(G, A, now); else if (G.scene == SC_CAVE) drawCave(G, A, now); else if (G.scene == SC_CAVERN) drawCavern(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
   const float kScene = (G.scene == SC_LINER || G.scene == SC_BEACH) ? 0.45f : (G.scene == SC_BOAT || G.scene == SC_CAVE) ? 0.0f : 1.0f;   // the web demo: less dark at sea and on the beach, none on the brook
   float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * kScene;   // the quieter it gets, the darker
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
@@ -1348,6 +1521,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : G.scene == SC_FOREST3 ? "FOREST" : G.scene == SC_CAVE ? "TUNNEL" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : G.scene == SC_FOREST3 ? "FOREST" : G.scene == SC_CAVE ? "TUNNEL" : G.scene == SC_CAVERN ? "TREASURY" : "LINER"; }
 
 }  // namespace beatadv
