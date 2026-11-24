@@ -60,7 +60,7 @@ int main() {
     double t = 0; const float dt = 1.0f / 30; int duckF = 0, lookF = 0, maxLive = 0; double leftAt = 0; float scrollAtDuck = -1;
     for (int f = 0; f < 30 * 40; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); if (G.scene != SC_PYRAMID) { leftAt = t; break; }
       if (G.py.duck) { duckF++; if (scrollAtDuck < 0) scrollAtDuck = G.py.scroll; } if (G.py.look) lookF++; int n = 0; for (const Pyramid::Rock& r : G.py.rocks) if (r.live) n++; if (n > maxLive) maxLive = n; }
-    const bool ok = G.py.rockN == 3 && G.py.passed == 3 && duckF > 30 && lookF > 15 && maxLive >= 1 && leftAt > 11 && leftAt < 20 && G.next == SC_LINER;
+    const bool ok = G.py.rockN == 3 && G.py.passed == 3 && duckF > 30 && lookF > 15 && maxLive >= 1 && leftAt > 11 && leftAt < 20 && G.next == SC_FOREST3;
     printf("%s  pyramid: rocks %d passed %d, crouched %d frames, glanced back %d frames, left at %.1f s\n", ok ? "ok  " : "FAIL", G.py.rockN, G.py.passed, duckF, lookF, leftAt);
     if (!ok) bad++;
   }

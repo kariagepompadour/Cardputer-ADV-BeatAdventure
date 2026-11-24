@@ -575,7 +575,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     const float runX = PYRAMID_X + rnd(24 * sm01(cl01(el / 0.9f)));
     P.look = P.duck = false;
     for (const Pyramid::Rock& r : P.rocks) if (r.live) { if (r.x > runX - 90 && r.x <= runX - 45) P.look = true; if (r.x > runX - 45 && r.x < runX + 25) P.duck = true; }
-    if (P.passed >= 3 && !G.fadeDir) switchTo(G, SC_LINER);   // the jungle is not ported yet: the story starts again
+    if (P.passed >= 3 && !G.fadeDir) switchTo(G, SC_FOREST3);   // back to the jungle
   }
   else if (G.scene == SC_CAVE) updateCave(G, A, dt, now);
   else if (G.scene == SC_CAVERN) updateCavern(G, A, dt, now);
