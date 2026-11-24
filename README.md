@@ -9,10 +9,11 @@ danger; quiet parts darken it and make everything wait. **You do not play; you w
 ## Why you only watch
 
 A new game has just arrived at the arcade. It looks wonderful, but the 100 yen in your pocket is precious, and not to be spent lightly. So you
-stand behind the player with the coin tight in your fist, looking over their shoulder, and that is enough. You are happy just to watch.
+stand behind the player with the coin tight in your fist, looking over their shoulder, and that is enough. You are happy just to watch. And
+you keep talking to yourself: "I wouldn't do it like that." "Not there, more to the right!"
 
 BeatAdventure is made for that feeling. You press no button and insert no coin. The explorer goes on his adventure by himself, to your
-music, and you can stay where you always stood: behind him, watching.
+music. Whether he falls into a pit or ducks a boulder, you can stay where you always stood, behind him, watching and shouting in your head.
 
 It is a sister of [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker): the same firmware (USB speaker, USB and BLE
 keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a microSD card) with the game as its screen.
