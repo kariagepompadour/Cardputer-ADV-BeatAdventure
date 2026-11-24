@@ -1598,10 +1598,10 @@ static void drawCavern(Game& G, const AudioIn& A, double now) {
   const uint16_t ORG = rgb(212, 124, 42), ORD = rgb(150, 84, 26);
   R(0, 0, W, H, rgb(8, 7, 10));
   if (C.reveal > 0) {   // finding the mask reveals five rows of equalizer in the walls (alpha 0.58, blended per rectangle)
-    static const uint16_t MU[5] = {rgb(224, 75, 52), rgb(244, 182, 54), rgb(39, 183, 143), rgb(72, 146, 218), rgb(197, 102, 183)};
-    const float keep = gAlpha; gAlpha = 0.58f * C.reveal;
-    for (int base = 26; base <= 130; base += 26) for (int j = 0; j < 30; j++) { int n = rnd(A.eqH[j]); if (n > 6) n = 6; const int x = j * PITCH + 1; for (int k = 0; k < n; k++) R(x, base - SEG * (k + 1) + 1, 6, SEG_H, MU[(j / 3) % 5]); }
-    gAlpha = keep; }
+    static const Col MC[5] = {{224, 75, 52}, {244, 182, 54}, {39, 183, 143}, {72, 146, 218}, {197, 102, 183}};   // the walls are one flat colour here, so the 0.58 blend is made once per colour and the bars are drawn opaque
+    const float ka = 0.58f * C.reveal; uint16_t MU[5];
+    for (int i = 0; i < 5; i++) MU[i] = rgb(rnd(8 + (MC[i].r - 8) * ka), rnd(7 + (MC[i].g - 7) * ka), rnd(10 + (MC[i].b - 10) * ka));
+    for (int base = 26; base <= 130; base += 26) for (int j = 0; j < 30; j++) { int n = rnd(A.eqH[j]); if (n > 6) n = 6; const int x = j * PITCH + 1; for (int k = 0; k < n; k++) R(x, base - SEG * (k + 1) + 1, 6, SEG_H, MU[(j / 3) % 5]); } }
   float hy = (float)CFL(C.lvl);   // the camera follows his floor, the ladder climb and the fall
   if (m.live && m.kind == CM_UP) hy = lp((float)CFL(C.lvl), (float)CFL(C.lvl - 1), cl01(m.t / 2.0f)); else if (m.live && (m.kind == CM_DROP || m.kind == CM_MISS)) hy = fminf((float)CWATER, m.from + 300 * m.t * m.t);
   const int cam = rnd(96 - hy); auto vis = [&](float y) { return y + cam > -50 && y + cam < H + 12; };
