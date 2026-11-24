@@ -32,7 +32,7 @@ namespace beatadv {
 
 constexpr int DOT = 3;
 constexpr int SHIP_DW = 9, SHIP_DH = 4, SHIP_W = SHIP_DW * DOT, SHIP_H = SHIP_DH * DOT;
-// Placeholder for the hero in the input-switch effect (Fn+I): a 9 x 4 dot ship, W hull, B shade, M trim, C canopy.
+// The fighter that flies across the input-switch effect (Fn+I), kept from KeySpeaker on purpose: the next stage after the space war is an ancient ruin. A 9 x 4 dot ship, W hull, B shade, M trim, C canopy.
 static const char* const SHIP[SHIP_DH] = {
   "M........",
   "MWWCC....",
