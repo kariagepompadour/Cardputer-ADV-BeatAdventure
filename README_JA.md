@@ -1,5 +1,7 @@
 # BeatAdventure
 
+**宇宙大戦の次の舞台は、古代遺跡だ！ ビートが、俺の魂を奮い立たせる。**
+
 M5Stack Cardputer ADV(240 x 135)用の、音楽同期の冒険ゲームです。
 [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker) の姉妹品で、KeySpeaker のファームウェア(USB スピーカー、
 USB と BLE のキーボード、エアマウス、ジョグダイヤル、内蔵マイク、Pico 2 の AUX ユニット、microSD の MP3)のゲーム画面を、

@@ -1,5 +1,7 @@
 # BeatAdventure
 
+**After the space war, the next stage is an ancient ruin. The beat stirs my soul.**
+
 A music-synced adventure for the M5Stack Cardputer ADV (240 x 135), and a sister of
 [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker). It is the KeySpeaker firmware (USB speaker, USB and BLE
 keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a microSD card) with the game screen replaced by the
