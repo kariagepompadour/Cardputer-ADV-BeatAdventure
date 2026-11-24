@@ -1408,10 +1408,20 @@ static void drawGold(float x, float y, double now) {   // a pile of gold bars on
   for (int r = 0; r < 3; r++) for (int c = 0; c < 3 - r; c++) { const float bx = x - 7 + c * 5 + r * 2.5f; R(bx, y - 3 - r * 3, 5, 3, G1); R(bx, y - 3 - r * 3, 5, 1, G3); R(bx, y - 1 - r * 3, 5, 1, G2); }
   if ((int)floor(now / 0.3) & 1) { R(x + 6, y - 11, 1, 3, WHITE565); R(x + 5, y - 10, 3, 1, WHITE565); }
 }
+static void drawGuard(float x, float fy, int seed, float ph, bool walk) {   // a guardian at home in the treasury: a few plain blocks like the jars and the mats (no skeleton, no blending), a spear planted beside him
+  const uint16_t SK = rgb(150, 92, 58), TN = rgb(236, 150, 60), RD = rgb(214, 50, 40), G1 = rgb(252, 208, 64), WD = rgb(120, 80, 40), OB = rgb(30, 24, 30);
+  const uint16_t F1 = (seed % 3 == 0) ? rgb(40, 200, 190) : rgb(30, 170, 80), F2 = (seed % 3 == 1) ? rgb(40, 200, 190) : rgb(214, 50, 40);
+  const int st = walk ? ((int)floorf(ph * 4) & 1) : 0;
+  R(x + 5, fy - 30, 1, 30, WD); R(x + 4, fy - 34, 3, 4, OB); R(x + 4, fy - 30, 3, 1, RD);   // the spear
+  R(x - 3, fy - 5, 2, 5 - st, SK); R(x + 1, fy - 5, 2, 4 + st, SK);   // legs (one steps when he walks)
+  R(x - 3, fy - 7, 7, 2, RD); R(x - 3, fy - 13, 7, 6, TN); R(x - 3, fy - 10, 7, 1, WHITE565);   // loincloth, tunic, a pale sash
+  R(x - 2, fy - 17, 5, 4, SK); R(x - 2, fy - 18, 5, 1, G1); R(x + 1, fy - 16, 1, 1, OB);   // head with a gold band
+  R(x - 2, fy - 21, 1, 3, F1); R(x, fy - 22, 1, 4, F2); R(x + 2, fy - 21, 1, 3, F1);   // feathers
+}
 static void drawResident(float x, float fy, double now, int kind, int seed, float pulse) {   // the guardians who live in the cavern: some stand guard with a planted spear, some walk their ledge, some sit by a fire, some sleep on a mat
   const uint16_t SK = rgb(150, 92, 58), TN = rgb(236, 150, 60), TQ = rgb(40, 200, 190), RD = rgb(214, 50, 40), GR = rgb(30, 170, 80), G1 = rgb(252, 208, 64);
-  if (kind == 0) drawWarrior(x, fy, now, seed % 3, 0, pulse, true);
-  else if (kind == 1) { const int dir = cosf((float)fmod(now * 0.5 + seed, 6.283185307179586)) > 0 ? 1 : -1; const int px = rnd(x + tsin(now * 0.5 + seed) * 26); if (dir < 0) mirrorOn(px); drawWarrior((float)px, fy, now, seed % 3, (float)fmod(now * 1.1 + seed * 0.3, 1.0), pulse); if (dir < 0) mirrorOff(); }
+  if (kind == 0) drawGuard(x, fy, seed, 0, false);
+  else if (kind == 1) { const int dir = cosf((float)fmod(now * 0.5 + seed, 6.283185307179586)) > 0 ? 1 : -1; const int px = rnd(x + tsin(now * 0.5 + seed) * 26); if (dir < 0) mirrorOn(px); drawGuard((float)px, fy, seed, (float)fmod(now * 1.1 + seed * 0.3, 1.0), true); if (dir < 0) mirrorOff(); }
   else if (kind == 2) { R(x - 7, fy - 3, 11, 3, SK); R(x - 3, fy - 12, 7, 9, TN); R(x - 3, fy - 8, 7, 1, WHITE565); R(x - 2, fy - 17, 5, 4, SK); R(x + 1, fy - 16, 1, 1, rgb(0, 0, 0)); R(x - 3, fy - 18, 7, 1, G1); R(x - 4, fy - 23, 1, 5, TQ); R(x - 2, fy - 25, 1, 7, RD); R(x, fy - 24, 1, 6, GR); R(x + 2, fy - 22, 1, 4, TQ); seg(x + 3, fy - 9, x + 8 + ((int)floor(now * 2 + seed) & 1), fy - 6, SK, 1); }
   else { const int br = (int)floor(now * 1.2 + seed) & 1; R(x - 10, fy - 2, 22, 2, rgb(190, 60, 50)); R(x - 9, fy - 6 - br, 13, 4, TN); R(x - 15, fy - 5, 6, 3, SK); R(x + 4, fy - 7, 5, 4, SK); R(x + 9, fy - 8, 7, 2, TQ); R(x + 9, fy - 6, 6, 2, RD); R(x + 6, fy - 5, 1, 1, rgb(0, 0, 0)); if ((int)floor(now * 1.5 + seed) & 1) { R(x + 12, fy - 14, 2, 1, WHITE565); R(x + 14, fy - 18, 2, 1, WHITE565); } }   // sleeping, with a drifting z
 }
@@ -1437,13 +1447,12 @@ static void drawCavern(Game& G, const AudioIn& A, double now) {
       else if (km5 == 1) { R(x - 3, F - 8, 7, 8, rgb(176, 92, 52)); R(x - 2, F - 10, 5, 2, rgb(176, 92, 52)); R(x - 3, F - 5, 7, 1, rgb(40, 190, 180)); R(x + 4, F - 6, 2, 4, rgb(176, 92, 52)); }   // a clay jar with a painted band
       else { R(x - 8, F - 2, 16, 2, rgb(190, 60, 50)); R(x - 8, F - 2, 16, 1, rgb(252, 208, 64)); R(x - 6, F - 3, 12, 1, rgb(40, 190, 180)); }   // a woven mat
       if (lv > 0 && (kk & 2)) { const int Tp = CFL(lv - 1); R(x - 3, Tp + 8, 7, 16, rgb(196, 56, 46)); R(x - 3, Tp + 8, 7, 2, rgb(252, 208, 64)); R(x - 1, Tp + 12, 3, 3, rgb(40, 190, 180)); R(x - 3, Tp + 24, 3, 3, rgb(196, 56, 46)); R(x + 1, Tp + 24, 3, 3, rgb(196, 56, 46)); } } }   // and a banner hangs from the ledge above
-  gAlpha = 0.82f;   // a crowd of guardians at home on every floor, a little back from the edge so that he runs in front of them
+  // a crowd of guardians at home on every floor, a little back from the edge so that he runs in front of them
   for (int lv = 0; lv < NF; lv++) { if (!vis((float)CFL(lv))) continue; for (int k = (int)floorf((sc - HX) / 48) - 1; k < (int)floorf((sc - HX + W) / 48) + 2; k++) {
       const uint32_t hh = (uint32_t)(k + lv * 131) * 2654435761u; if (((hh >> 8) % 20) > 2) continue; const float wx = k * 48.0f + 12 + (hh >> 12) % 24; const int x = rnd(HX + wx - sc);
       if (x < -30 || x > W + 30 || !cavSolid(lv, wx - 14) || !cavSolid(lv, wx + 14) || !cavSolid(lv, wx)) continue; bool skip = false;
       for (int i = 0; i < T.nst && !skip; i++) if (fabsf(T.st[i].xs + 5 - wx) < 34) skip = true; for (int i = 0; i < T.ng && !skip; i++) if (T.gold[i].lvl == lv && fabsf(T.gold[i].x - wx) < 20) skip = true; if (skip) continue;
       static const int KIND[6] = {0, 1, 2, 3, 0, 1}; drawResident((float)x, (float)(CFL(lv) - 1), now, KIND[(hh >> 16) % 6], (int)((hh >> 20) % 9), A.pulse); } }
-  gAlpha = 1.0f;
   for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i]) continue; const int x = rnd(HX + p.x - sc); if (x > -10 && x < W + 10 && vis((float)CFL(p.lvl))) drawGold((float)x, (float)CFL(p.lvl), now); }
   R(0, CWATER, W, 300, rgb(30, 50, 200)); for (int x = 0; x < W; x += 4) { const int wy = CWATER + rnd(tsin((x + now * 40) * 0.12) * 1); R(x, wy, 4, 2, rgb(110, 140, 255)); }   // the river below
   { const int wy0 = (int)floorf((-cam - 10) / 6.0f) * 6; R(W - 12, wy0, 12, CWATER - wy0, rgb(150, 110, 50)); for (int y = wy0; y < CWATER; y += 6) R(W - 12 + (((y % 5) + 5) % 5), y, 5, 3, rgb(110, 76, 32)); }   // the rock wall at the right
