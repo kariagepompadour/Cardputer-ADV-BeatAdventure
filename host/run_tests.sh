@@ -10,4 +10,6 @@ g++ -std=c++17 -O2 -w -o "$OUT/analysis_test" analysis_test.cpp
 "$OUT/analysis_test"
 g++ -std=c++17 -O2 -w -o "$OUT/game_test" game_test.cpp
 "$OUT/game_test"
+g++ -std=c++17 -O1 -w -fsanitize=address,undefined -o "$OUT/full_run_test" full_run_test.cpp
+"$OUT/full_run_test" 2 3600
 rm -rf "$OUT"

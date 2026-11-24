@@ -373,7 +373,7 @@ static void updateBeach(Game& G, const AudioIn& A, float dt, double now) {
   }
   if (!b.forest && !G.fadeDir && now - b.shipStart >= 48) switchTo(G, SC_FOREST);   // the liner disappears at the horizon, and the beach gives way to forest
   if (b.hills && !G.fadeDir && !G.hide && now - G.t0 >= 55) switchTo(G, SC_WALL);   // the trail ends at a landslide
-  if (b.forest && !b.hills && !G.fadeDir && !G.hide && now - G.t0 >= 100) switchTo(G, SC_LINER);   // the treasure and the hidden shaft come next in the web demo; until they are ported, the story starts again
+
 }
 
 static inline float rvTtl(const River& r, const RvObs& o) { return (o.wx - r.scroll) / V; }
@@ -431,7 +431,7 @@ static void updateCave(Game& G, const AudioIn& A, float dt, double now) {
   Cave& L = G.cv; L.t += dt; L.scroll += V * G.sp * dt;   // (G.sp already includes the cart's speed-up)
   if (L.ld < 1) L.ld += dt;
   if (L.mv.live) L.mvT += dt; else L.mvT = 0;
-  if ((L.t > 170 || L.mvT > 14) && !G.fadeDir) switchTo(G, SC_LINER);   // a watchdog: whatever goes wrong, the tunnel lets him out (back to the start for now)
+  if ((L.t > 170 || L.mvT > 14) && !G.fadeDir) switchTo(G, SC_FOREST3);   // a watchdog: whatever goes wrong, the tunnel lets him out (into the jungle, as in the web demo)
   // the ceiling presses: the light shrinks and the roof falls when it is quiet and rises when it is loud
   while (L.roofN * PITCH < L.scroll + W + 16) { int target = rnd(L.cart ? 26 - 11 * A.level : 38 - 22 * A.level), i = L.roofN++; int d = target - L.roofPrev; d = d < -2 ? -2 : d > 2 ? 2 : d; L.roofPrev += d; L.roof[i & 127] = (uint8_t)L.roofPrev; }
   L.cv = cey(L, HX);
@@ -588,7 +588,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   if (!G.hide && A.beatNow && G.sneak < 0.3f) { float f = (HC.ph - 0.25f) - floorf(HC.ph - 0.25f), e = f < 0.5f ? -f : 1 - f; HC.ph += e * 0.35f; }
   HC.ph -= floorf(HC.ph);
   G.silentT = (!A.sounding && G.scene != SC_CAMP) ? G.silentT + dt : 0;
-  if (G.silentT > 60 && !G.fadeDir && G.scene < SC_FOUNTAIN && !G.bc.find.live && !G.bc.fall.live && !G.rv.exitLive) switchTo(G, SC_CAMP);   // a whole minute without music: a rest, never during music
+  if (G.silentT > 60 && !G.fadeDir && G.scene < SC_FOUNTAIN && !(onLand(G) && (G.bc.find.live || G.bc.fall.live)) && !(G.scene == SC_WATERWAY && G.rv.exitLive)) switchTo(G, SC_CAMP);   // a whole minute without music: a rest, never during music
   updateMountains(G, A, now);
   if (G.scene == SC_LINER) updateLiner(G, A, dt, now);
   else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
