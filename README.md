@@ -8,8 +8,8 @@ keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a 
 BeatAdventure game: an explorer who runs, climbs, swims and falls through a journey that follows the music's level, spectrum and
 beats. The explorer plays by himself; you watch.
 
-**Try it in the browser first: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/** (the web demo is the reference this firmware was
-ported from.)
+**Play the web demo in your browser first: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**
+This firmware was ported from it, and the web demo is the reference for how everything should look and behave.
 
 [日本語](README_JA.md)
 

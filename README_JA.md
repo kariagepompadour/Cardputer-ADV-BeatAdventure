@@ -8,7 +8,8 @@ USB と BLE のキーボード、エアマウス、ジョグダイヤル、内�
 BeatAdventure のゲームに差し替えたものです。探検家は、音の大きさ、スペクトラム、拍に合わせて、走り、登り、泳ぎ、落ちながら旅をします。
 探検家は自分で動くので、あなたは眺めるだけです。
 
-**まずはブラウザで遊べます: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**(この実機版は、この WEB 版を元に移植しました。)
+**まずはブラウザで遊べます: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**
+この実機版は、この WEB 版を元に移植しました。見た目と動きの基準は、WEB 版です。
 
 [English](README.md)
 
