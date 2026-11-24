@@ -43,8 +43,9 @@ knowing:
 
 - An early build crashed at start-up because the game's functions run on the 8 KB loop-task stack and one of them built a large state on it.
   That is fixed, and `firmware/build.sh` now refuses a build in which a game function uses more than 2.5 KB of stack.
-- Once, in an early treasury build, the screen froze while the music kept playing; it did not happen again in about 40 minutes of watching and
-  could not be reproduced on a computer. The loop watchdog is on since then, so a frozen loop restarts the device. The cause is unknown.
+- Once, in an early treasury build, the screen froze while the music kept playing; it did not happen again in about 20 minutes of watching
+  and could not be reproduced on a computer. The cause is unknown. Since then the loop watchdog is on and the serial log records where the
+  loop was; what the device does when it fires has not been tested.
 
 The microphone input, BLE, the Pico 2 AUX unit and MP3 playback come from KeySpeaker and have not been re-tested with the game.
 
@@ -54,9 +55,10 @@ lines) and `ba_gfx.h` (the drawing layer), plain C++ with no Arduino headers.
 
 ## Keys
 
-The keys are KeySpeaker's: Space plays and pauses, `,` and `/` go to the previous and next track (or jump in an MP3), `[` and `]` change the
-volume, `\` mutes, `-` changes the sensitivity, `b` cuts the bass, `h` shows the help, `d` shows the numbers (and `n`, `p` then change the
-stage). Other letters open the help.
+The keys are KeySpeaker's (see its README for the full list). The ones used most: Space plays and pauses, `,` and `/` go to the previous and
+next track (or jump in an MP3), `[` and `]` change the volume, `\` mutes, `Fn` + `I` switches the input (USB, microphone, AUX, MP3),
+`Fn` + `M` switches the screen, `h` shows the help. Only in this game: `d` shows the numbers, and while they are shown `n` and `p` jump to the
+next and previous stage.
 
 ## Build
 
