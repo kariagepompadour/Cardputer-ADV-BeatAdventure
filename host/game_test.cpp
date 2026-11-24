@@ -33,6 +33,17 @@ int main() {
     printf("%s  tunnel: deepest level %d, doorway reached %d, boulder frames %d, arrow frames %d, cart frames %d, guardian frames %d, left at %.0f s\n", ok ? "ok  " : "FAIL", maxDepth, gate > 0, boulder, arrow, ride, chase, leftAt);
     if (!ok) bad++;
   }
+  {   // the waterway: a quiet song makes him miss the first gap of the treasury and drop into the river; the splash leads straight into the channel, which ends at the water source
+    Game G; gameInit(G, 0); setScene(G, SC_CAVERN, 0);
+    static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.4f; A.rms = 0.1f;
+    double t = 0; const float dt = 1.0f / 30; double enteredAt = 0, leftAt = 0; bool entry = false, exitSeen = false; float maxScroll = 0; int objs = 0;
+    for (int f = 0; f < 30 * 120; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t);
+      if (G.scene == SC_WATERWAY) { if (!enteredAt) enteredAt = t; if (G.rv.entryLive) entry = true; if (G.rv.exitLive) exitSeen = true; if (G.rv.scroll > maxScroll) maxScroll = G.rv.scroll; for (const RvObs& o : G.rv.obs) if (o.live) objs++; }
+      else if (enteredAt) { leftAt = t; break; } }
+    const bool ok = enteredAt > 0 && entry && exitSeen && objs == 0 && maxScroll >= WATERWAY_LEN - 7 && leftAt > enteredAt + 10;
+    printf("%s  waterway: entered at %.0f s, splash-in %d, reached the source %d, river life %d, scrolled %.0f of %.0f, left at %.0f s\n", ok ? "ok  " : "FAIL", enteredAt, (int)entry, (int)exitSeen, objs, maxScroll, (double)WATERWAY_LEN, leftAt);
+    if (!ok) bad++;
+  }
   {   // the treasury: from the bottom floor up through ladders, gaps and ropes to the pit on the top floor; gold on the way
     Game G; gameInit(G, 0); setScene(G, SC_CAVERN, 0);
     static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
