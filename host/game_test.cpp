@@ -87,8 +87,8 @@ int main() {
     static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
     double t = 0; const float dt = 1.0f / 30; int top = 9, bars = 0, chaseF = 0, jabF = 0, duckF = 0, stuckF = 0; double leftAt = 0;
     for (int f = 0; f < 30 * 200; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); if (G.scene != SC_CAVERN) { leftAt = t; break; } if (G.cn.lvl < top) top = G.cn.lvl; bars = G.cn.bars; if (G.cn.chase.live) { chaseF++; if (G.cn.chase.attack > 0 && G.cn.chase.attack < 0.28f) jabF++; if (G.cn.chase.stuck) stuckF++; } if (G.cn.duck) duckF++; }
-    const bool ok = top == 0 && bars >= 15 && leftAt > 60 && chaseF > 0 && jabF > 0 && duckF > 0;
-    printf("%s  treasury: reached floor %d, gold bars %d, left at %.0f s; guardians behind him %d frames (spear jabs %d, ducking %d, stopped at a rope %d)\n", ok ? "ok  " : "FAIL", top, bars, leftAt, chaseF, jabF, duckF, stuckF);
+    const bool ok = top == 0 && G.cn.maskTaken && G.cn.reveal > 0.9f && bars >= 15 && leftAt > 60 && chaseF > 0 && jabF > 0 && duckF > 0;
+    printf("%s  treasury: reached floor %d, mask %d, gold bars %d, left at %.0f s; guardians behind him %d frames (spear jabs %d, ducking %d, stopped at a rope %d)\n", ok ? "ok  " : "FAIL", top, (int)G.cn.maskTaken, bars, leftAt, chaseF, jabF, duckF, stuckF);
     if (!ok) bad++;
   }
   if (bad) return 1;

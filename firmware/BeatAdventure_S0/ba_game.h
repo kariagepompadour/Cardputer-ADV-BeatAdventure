@@ -146,6 +146,7 @@ struct Cavern {
   bool done[19] = {}, taken[19] = {}; Spark sparks[24]; Bat bats[2];
   struct { bool live = false, stuck = false; float t = 0, nextAttack = 1.5f, attack = 0, wx0 = 0; } chase;   // the temple guardians who come after him on floors 6, 3 and 1; stuck: they stop dead at the edge when he takes a rope
   bool duck = false;   // he ducks the spear thrust
+  bool maskTaken = false; struct { bool live = false; float t = 0; } maskAnim; float reveal = 0;   // the golden mask on its pedestal on floor 8; taking it lights five rows of equalizer in the walls
 };
 
 enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_CAVE, SC_CAVERN, SC_WATERWAY, SC_FOUNTAIN, SC_SKYFALL, SC_PYRAMID, SC_CAMP, SC_COUNT };
@@ -509,12 +510,17 @@ static void updateCavern(Game& G, const AudioIn& A, float dt, double now) {
       else if (st.kind == ST_PIT && dx <= 0 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_DROP; C.mv.t = 0; C.mv.from = (float)CFL(0); C.done[i] = true; } }
     for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i] || p.lvl != C.lvl || C.jump >= 0) continue;   // gold bars are picked up on the run
       if (fabsf(p.x - C.scroll) < 7) { C.taken[i] = true; C.bars++; for (int k = 0; k < 8; k++) for (Spark& s : C.sparks) if (!s.live) { s.live = true; s.x = HX + 4; s.y = (float)(CFL(C.lvl) - 8); s.vx = (rand01(G) - 0.5f) * 60; s.vy = -30 - rand01(G) * 40; s.t = 0; break; } } }
+    if (!C.maskTaken && C.lvl == 8 && fabsf(C.scroll - 1300) < 10) {   // the golden mask: he stops, lifts it high; sparks fly
+      C.maskTaken = true; C.maskAnim.live = true; C.maskAnim.t = 0;
+      for (int k = 0; k < 12; k++) for (Spark& sp : C.sparks) if (!sp.live) { sp.live = true; sp.x = HX; sp.y = (float)(CFL(8) - 22); sp.vx = (rand01(G) - 0.5f) * 80; sp.vy = -25 - rand01(G) * 45; sp.t = 0; break; } }
   } else {
     auto& m = C.mv; m.t += dt;
     if (m.kind == CM_SWING) { if (m.xs - C.scroll < -29) m.live = false; }
     else if (m.kind == CM_DROP || m.kind == CM_MISS) { const float splashAt = sqrtf((CWATER - m.from) / 300); if (m.t > splashAt + 0.12f && !G.fadeDir) setScene(G, SC_WATERWAY, now); }   // the river carries him into the waterway, straight in without a black cut
     else if (m.t >= 2.0f) { C.lvl--; m.live = false; if (C.lvl == 6 || C.lvl == 3 || C.lvl == 1) { C.chase.live = true; C.chase.stuck = false; C.chase.t = 0; C.chase.nextAttack = 1.5f; C.chase.attack = 0; } }   // up on floors 6, 3 and 1 the temple guardians, who live here, come after him
   }
+  if (C.maskAnim.live) { C.maskAnim.t += dt; if (C.maskAnim.t > 1.4f) C.maskAnim.live = false; }
+  if (C.maskTaken && (!C.maskAnim.live || C.maskAnim.t > 0.45f)) C.reveal = fminf(1.0f, C.reveal + dt * 1.2f);
   if (C.chase.live) { auto& ch = C.chase; ch.t += dt;
     if (!ch.stuck && !C.mv.live && ch.t > 1.2f && ch.t >= ch.nextAttack) { ch.attack = 0.45f; ch.nextAttack = ch.t + 2.6f; }
     if (ch.stuck) ch.attack = 0; else if (ch.attack > 0) ch.attack = fmaxf(0.0f, ch.attack - dt);
@@ -573,7 +579,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop))) || (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind != CM_SWING) || (G.scene == SC_WATERWAY && G.rv.exitLive) || (G.scene == SC_PYRAMID && G.py.duck)) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop))) || (G.scene == SC_CAVERN && ((G.cn.mv.live && G.cn.mv.kind != CM_SWING) || G.cn.maskAnim.live)) || (G.scene == SC_WATERWAY && G.rv.exitLive) || (G.scene == SC_PYRAMID && G.py.duck)) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
   if (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind == CM_SWING) G.sp = 0.7f;   // swinging on a rope
   if (G.scene == SC_CAVE) {   // in the mine cart the tunnel races past, faster in loud music
     Cave& L = G.cv; L.vm = (L.cart && !L.mv.live) ? (1.45f + 0.5f * A.level) * (0.25f + 0.75f * sm01(cl01(L.rideT / 1.5f))) * fmaxf(0.6f, fminf(1.6f, 1 - 2.2f * (labH(L, L.scroll + 4) - labH(L, L.scroll - 4)) / 8)) : 1.0f; G.sp *= L.vm; }
@@ -1591,6 +1597,11 @@ static void drawCavern(Game& G, const AudioIn& A, double now) {
   const Cavern& C = G.cn; const CavTab& T = cavTab(); const float sc = C.scroll; const auto& m = C.mv;
   const uint16_t ORG = rgb(212, 124, 42), ORD = rgb(150, 84, 26);
   R(0, 0, W, H, rgb(8, 7, 10));
+  if (C.reveal > 0) {   // finding the mask reveals five rows of equalizer in the walls (alpha 0.58, blended per rectangle)
+    static const uint16_t MU[5] = {rgb(224, 75, 52), rgb(244, 182, 54), rgb(39, 183, 143), rgb(72, 146, 218), rgb(197, 102, 183)};
+    const float keep = gAlpha; gAlpha = 0.58f * C.reveal;
+    for (int base = 26; base <= 130; base += 26) for (int j = 0; j < 30; j++) { int n = rnd(A.eqH[j]); if (n > 6) n = 6; const int x = j * PITCH + 1; for (int k = 0; k < n; k++) R(x, base - SEG * (k + 1) + 1, 6, SEG_H, MU[(j / 3) % 5]); }
+    gAlpha = keep; }
   float hy = (float)CFL(C.lvl);   // the camera follows his floor, the ladder climb and the fall
   if (m.live && m.kind == CM_UP) hy = lp((float)CFL(C.lvl), (float)CFL(C.lvl - 1), cl01(m.t / 2.0f)); else if (m.live && (m.kind == CM_DROP || m.kind == CM_MISS)) hy = fminf((float)CWATER, m.from + 300 * m.t * m.t);
   const int cam = rnd(96 - hy); auto vis = [&](float y) { return y + cam > -50 && y + cam < H + 12; };
@@ -1616,6 +1627,7 @@ static void drawCavern(Game& G, const AudioIn& A, double now) {
       for (int i = 0; i < T.nst && !skip; i++) if (fabsf(T.st[i].xs + 5 - wx) < 34) skip = true; for (int i = 0; i < T.ng && !skip; i++) if (T.gold[i].lvl == lv && fabsf(T.gold[i].x - wx) < 20) skip = true; if (skip) continue;
       static const int KIND[6] = {0, 1, 2, 3, 0, 1}; drawResident((float)x, (float)(CFL(lv) - 1), now, KIND[(hh >> 16) % 6], (int)((hh >> 20) % 9), A.pulse); } }
   for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i]) continue; const int x = rnd(HX + p.x - sc); if (x > -10 && x < W + 10 && vis((float)CFL(p.lvl))) drawGold((float)x, (float)CFL(p.lvl), now); }
+  if (!C.maskTaken) { const int x = rnd(HX + 1300 - sc), fy = CFL(8); if (x > -20 && x < W + 20 && vis((float)fy)) { R(x - 12, fy - 17, 24, 17, rgb(114, 104, 90)); R(x - 12, fy - 17, 24, 3, rgb(172, 156, 124)); R(x - 2, fy - 8, 4, 3, rgb(40, 190, 180)); drawIdol((float)x, (float)(fy - 17), now, false); } }   // the golden mask on its pedestal
   R(0, CWATER, W, 300, rgb(30, 50, 200)); for (int x = 0; x < W; x += 4) { const int wy = CWATER + rnd(tsin((x + now * 40) * 0.12) * 1); R(x, wy, 4, 2, rgb(110, 140, 255)); }   // the river below
   { const int wy0 = (int)floorf((-cam - 10) / 6.0f) * 6; R(W - 12, wy0, 12, CWATER - wy0, rgb(150, 110, 50)); for (int y = wy0; y < CWATER; y += 6) R(W - 12 + (((y % 5) + 5) % 5), y, 5, 3, rgb(110, 76, 32)); }   // the rock wall at the right
   if (C.chase.live && !m.live) { drawCavernChasers(C, T, now, A, (float)CFL(C.lvl));
@@ -1629,13 +1641,16 @@ static void drawCavern(Game& G, const AudioIn& A, double now) {
   else if (m.live && m.kind == CM_SWING) { const float dx = m.xs - sc; SWING_K = fmaxf(-1.0f, fminf(1.0f, dx / 29)); drawHero(HX, (float)rnd(CFL(C.lvl) - 44 + sqrtf(fmaxf(1.0f, 36 * 36 - fminf(35 * 35, dx * dx))) + 23), now, HM_SWING); }
   else if (m.live) { const float q = cl01(m.t / 2.0f); const int hy2 = rnd(lp((float)CFL(C.lvl), (float)CFL(C.lvl - 1), q)), z = 40 + (CFL(C.lvl) - hy2); gOffY = cam + hy2 - GY; drawLadderHero(HX, (float)z, 1); gOffY = cam; }
   else { if (C.jump >= 0) { const float u = C.jump / C.jd; y = CFL(C.lvl) - 4 * C.jh * u * (1 - u); mode = HM_AIR; AIR_U = u; } drawHero(HX, (float)rnd(y), now, mode); }
+  if (C.maskAnim.live) drawIdol((float)HX, (float)(CFL(C.lvl) - 28), now, true);
   for (const Spark& s : C.sparks) if (s.live) R(s.x, s.y, 2, 2, ((int)floor(s.t * 20) & 1) ? WHITE565 : rgb(252, 208, 64));
   gOffY = 0;
   for (const Bat& b : C.bats) if (b.live) drawBat(b, A);
+  if (C.maskAnim.live) fillA(72, 13, 96, 13, 0, 0, 0, 0.7f);   // GOLDEN MASK: the box here, the words drawn by the sketch
   if (C.t < 3.2f) { const float a = fminf(fminf(1.0f, C.t / 0.5f), (3.2f - C.t) / 0.6f); fillA(60, 22, 120, 14, 0, 0, 0, 0.55f * fmaxf(0.0f, a)); }   // a caption as he arrives (the words are drawn by the sketch)
 }
 static bool gameCaption(const Game& G, const char** text, float* alpha) {   // the few words that may appear on the game screen
   if (G.scene == SC_CAVERN && G.cn.t < 3.2f) { *text = "THE TREASURY"; *alpha = fminf(fminf(1.0f, G.cn.t / 0.5f), (3.2f - G.cn.t) / 0.6f); return true; }
+  if (G.scene == SC_CAVERN && G.cn.maskAnim.live) { *text = "GOLDEN MASK"; *alpha = 1; return true; }
   return false;
 }
 

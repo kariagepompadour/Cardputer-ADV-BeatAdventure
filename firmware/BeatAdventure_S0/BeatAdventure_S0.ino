@@ -49,9 +49,9 @@
 #define KS_DIAG 0  // (MP3 stage 0) 1: heap / task diagnostics on the serial port (KsDiag.h), nothing else changes
 #if KS_DIAG
 #include "KsDiag.h"
-#define BUILD_TAG "B16l+D"
+#define BUILD_TAG "B16m+D"
 #else
-#define BUILD_TAG "B16l"
+#define BUILD_TAG "B16m"
 #endif
 
 #if !defined(ARDUINO_USB_MODE) || ARDUINO_USB_MODE != 0
@@ -1034,7 +1034,7 @@ static void drawViz(uint32_t now) {
   };
   canvas.setTextSize(1);
   { const char* cap = nullptr; float capA = 0;   // (B16) a short title on the treasure rooms: white with a black shadow, over the dark band the game draws
-    if (beatadv::caption(viz, &cap, &capA) && capA > 0.35f) label(cap, 120 - canvas.textWidth(cap) / 2, 25, 0xFFFF); }
+    if (beatadv::caption(viz, &cap, &capA) && capA > 0.35f) label(cap, 120 - canvas.textWidth(cap) / 2, cap[0] == 'G' ? 15 : 25, 0xFFFF); }   // THE TREASURY sits in its box at y 22-36, GOLDEN MASK in the one at 13-26
   {
     char b[40];
     snprintf(b, sizeof b, "%lufps up%.1f dr%.1f b%lu", (unsigned long)shownFps, shownUpMax / 1000.0f, shownDrMax / 1000.0f, (unsigned long)shownBeats);
