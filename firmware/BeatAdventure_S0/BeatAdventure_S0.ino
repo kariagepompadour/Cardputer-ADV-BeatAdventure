@@ -49,9 +49,9 @@
 #define KS_DIAG 0  // (MP3 stage 0) 1: heap / task diagnostics on the serial port (KsDiag.h), nothing else changes
 #if KS_DIAG
 #include "KsDiag.h"
-#define BUILD_TAG "B16d+D"
+#define BUILD_TAG "B16e+D"
 #else
-#define BUILD_TAG "B16d"
+#define BUILD_TAG "B16e"
 #endif
 
 #if !defined(ARDUINO_USB_MODE) || ARDUINO_USB_MODE != 0
@@ -1002,11 +1002,14 @@ static void drawViz(uint32_t now) {
   uint32_t t0 = micros();
   if (!viz.ready || now / 1000.0 - viz.lastNow > 1.0) beatadv::init(viz, now);  // first time, or back from the other screen
   uint32_t u0 = micros();
+  diagMark(diagLoop, 6);
   beatadv::update(viz, now, vizPcm, VIZ_PCM_N - 1, vizPcmPos.load(std::memory_order_acquire), micOn ? MIC_RATE : RATE);
   uint32_t upUs = micros() - u0;
   uint32_t r0 = micros();
+  diagMark(diagLoop, 7);
   beatadv::render(viz, static_cast<uint16_t*>(canvas.getBuffer()), now);
   uint32_t drUs = micros() - r0;
+  diagMark(diagLoop, 8);
   // (B0-1b) What the game screen costs and sees, once a second: frames a second, the slowest analysis, beats (and plain-onset beats)
   // a second, the tracker's tempo, lock and confidence. On the screen at the top left and on the serial port as "[BA] ...".
   static uint32_t repMs = 0, repFrames = 0, repUpMax = 0, repDrMax = 0, repBeats = 0, repPlain = 0, shownFps = 0, shownUpMax = 0, shownDrMax = 0, shownBeats = 0;
@@ -2197,6 +2200,7 @@ void setup() {
 }
 
 void loop() {
+  { static bool wdtOn = false; if (!wdtOn) { wdtOn = true; enableLoopWDT(); } feedLoopWDT(); }   // (B16e) a stuck screen: if loop() does not come round for several seconds the task watchdog reports where it is stuck (see diagLoop and the crash record)
   diagMark(diagLoop, 1);
   M5Cardputer.update();
   diagMark(diagLoop, 2);
