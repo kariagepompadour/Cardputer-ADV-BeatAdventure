@@ -18,6 +18,8 @@ BeatAdventure is made for that feeling. You press no button and insert no coin. 
 music. Whether he falls into a pit or ducks a boulder, you can stay where you always stood, behind him, watching and backseat-gaming in your
 head.
 
+"Go on, you can do it!"
+
 It is a sister of [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker): the same firmware (USB speaker, USB and BLE
 keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a microSD card) with the game as its screen.
 

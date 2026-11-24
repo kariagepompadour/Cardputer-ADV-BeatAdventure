@@ -1,4 +1,4 @@
-# BeatAdventure
+うわ# BeatAdventure
 
 **宇宙大戦の次の舞台は、古代遺跡だ！ ビートが、俺の魂を奮い立たせる。**
 
@@ -16,6 +16,8 @@ BeatAdventure は、M5Stack Cardputer ADV(画面 240 x 135)用の、音楽で動
 
 BeatAdventure は、あのときの気持ちのためのゲームです。ボタンも、100円も、いりません。探検家は、あなたの音楽に合わせて、自分で冒険に出ます。
 彼が穴に落ちても、岩にかがんでも、あなたは、あの頃のまま、後ろから眺めて、好きに口出ししていればいいのです。
+
+「がんばれ！」
 
 [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker) の姉妹品です。同じファームウェア(USB スピーカー、USB と BLE
 のキーボード、エアマウス、ジョグダイヤル、内蔵マイク、Pico 2 の AUX ユニット、microSD の MP3)の画面が、このゲームになっています。
