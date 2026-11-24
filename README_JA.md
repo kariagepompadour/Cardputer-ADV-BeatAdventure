@@ -21,7 +21,7 @@ BeatAdventure は、M5Stack Cardputer ADV(画面 240 x 135)用の、音楽で動
 </td>
 <td valign="top" width="360">
 
-<img src="docs/images/poster_ja.jpg" alt="BeatAdventureのポスター：探検家がツルで密林の川を渡り、客船、狩人、黄金の神殿、滝、ピラミッドが並び、音の棒が全体を縫う" width="360">
+<img src="docs/images/poster_ja.jpg" alt="BeatAdventureのポスター：探検家がツルで密林の川を渡り、客船、狩人、黄金の神殿、滝、ピラミッドが並び、音の棒が全体を縫う。隅のCardputer ADVに、ゲーム画面が映っている" width="360">
 
 </td>
 </tr>

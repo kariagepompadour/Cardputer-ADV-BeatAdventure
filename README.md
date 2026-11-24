@@ -21,7 +21,7 @@ This firmware was ported from it, and the web demo is the reference for how ever
 </td>
 <td valign="top" width="360">
 
-<img src="docs/images/poster_en.jpg" alt="BeatAdventure poster: an explorer swings over a jungle river past a liner, hunters, a golden temple face, a waterfall and a pyramid, with sound bars winding through it all" width="360">
+<img src="docs/images/poster_en.jpg" alt="BeatAdventure poster: an explorer swings over a jungle river past a liner, hunters, a golden temple face, a waterfall and a pyramid, with sound bars winding through it all; a Cardputer ADV in the corner shows the game" width="360">
 
 </td>
 </tr>
