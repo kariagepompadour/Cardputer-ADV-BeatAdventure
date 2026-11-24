@@ -142,6 +142,8 @@ struct Cavern {
   float scroll = 0, t = 0, jump = -1, jd = JD, jh = JH; int lvl = 9, bars = 0;
   struct { bool live = false; CvnMk kind = CM_UP; float t = 0, xs = 0, from = 0; } mv;
   bool done[19] = {}, taken[19] = {}; Spark sparks[24]; Bat bats[2];
+  struct { bool live = false, stuck = false; float t = 0, nextAttack = 1.5f, attack = 0, wx0 = 0; } chase;   // the temple guardians who come after him on floors 6, 3 and 1; stuck: they stop dead at the edge when he takes a rope
+  bool duck = false;   // he ducks the spear thrust
 };
 
 enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_CAVE, SC_CAVERN, SC_COUNT };
@@ -467,7 +469,7 @@ static void updateCavern(Game& G, const AudioIn& A, float dt, double now) {
       if (st.lvl != C.lvl || C.done[i]) continue;
       if (st.kind == ST_GAP && C.jump < 0 && dx <= 28 && dx > 0) { const bool shortJ = C.lvl == NF - 1 && A.sounding && A.level < 0.55f; C.jd = shortJ ? 0.36f : A.sounding ? JD : 0.82f; C.jh = shortJ ? 20.0f : JH; C.jump = 0; C.done[i] = true; }   // a slow silent run still clears an ordinary gap
       else if (st.kind == ST_LADUP && dx <= 0 && C.jump < 0) { C.scroll = (float)st.xs; C.mv.live = true; C.mv.kind = CM_UP; C.mv.t = 0; C.done[i] = true; }
-      else if (st.kind == ST_ROPE && dx <= 29 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_SWING; C.mv.t = 0; C.mv.xs = (float)st.xs; C.done[i] = true; }   // a rope over a wide gap: he grabs it and swings across
+      else if (st.kind == ST_ROPE && dx <= 29 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_SWING; C.mv.t = 0; C.mv.xs = (float)st.xs; C.done[i] = true; if (C.chase.live) { C.chase.stuck = true; C.chase.t = fminf(C.chase.t, 6.0f); C.chase.wx0 = st.xs - 35.0f; } }   // a rope over a wide gap: he grabs it and swings across
       else if (st.kind == ST_PIT && dx <= 0 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_DROP; C.mv.t = 0; C.mv.from = (float)CFL(0); C.done[i] = true; } }
     for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i] || p.lvl != C.lvl || C.jump >= 0) continue;   // gold bars are picked up on the run
       if (fabsf(p.x - C.scroll) < 7) { C.taken[i] = true; C.bars++; for (int k = 0; k < 8; k++) for (Spark& s : C.sparks) if (!s.live) { s.live = true; s.x = HX + 4; s.y = (float)(CFL(C.lvl) - 8); s.vx = (rand01(G) - 0.5f) * 60; s.vy = -30 - rand01(G) * 40; s.t = 0; break; } } }
@@ -475,8 +477,13 @@ static void updateCavern(Game& G, const AudioIn& A, float dt, double now) {
     auto& m = C.mv; m.t += dt;
     if (m.kind == CM_SWING) { if (m.xs - C.scroll < -29) m.live = false; }
     else if (m.kind == CM_DROP || m.kind == CM_MISS) { const float splashAt = sqrtf((CWATER - m.from) / 300); if (m.t > splashAt + 0.12f && !G.fadeDir) switchTo(G, SC_LINER); }   // the river carries him into the waterway in the web demo; until it is ported, the story starts again
-    else if (m.t >= 2.0f) { C.lvl--; m.live = false; }
+    else if (m.t >= 2.0f) { C.lvl--; m.live = false; if (C.lvl == 6 || C.lvl == 3 || C.lvl == 1) { C.chase.live = true; C.chase.stuck = false; C.chase.t = 0; C.chase.nextAttack = 1.5f; C.chase.attack = 0; } }   // up on floors 6, 3 and 1 the temple guardians, who live here, come after him
   }
+  if (C.chase.live) { auto& ch = C.chase; ch.t += dt;
+    if (!ch.stuck && !C.mv.live && ch.t > 1.2f && ch.t >= ch.nextAttack) { ch.attack = 0.45f; ch.nextAttack = ch.t + 2.6f; }
+    if (ch.stuck) ch.attack = 0; else if (ch.attack > 0) ch.attack = fmaxf(0.0f, ch.attack - dt);
+    if (ch.t > 11) ch.live = false; }
+  C.duck = C.jump < 0 && !C.mv.live && C.chase.live && C.chase.attack > 0 && C.chase.attack < 0.28f;   // duck the guardian's spear thrust
   for (Spark& s : C.sparks) if (s.live) { s.t += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 120 * dt; if (s.t >= 0.7f) s.live = false; }
   // bats
   if (A.beatNow && A.sounding && !G.fadeDir && A.level > 0.25f && rand01(G) < 0.1f) { int n = 0; for (const Bat& b : C.bats) if (b.live) n++; if (n < 1) for (Bat& b : C.bats) if (!b.live) { b = Bat(); b.live = true; b.x = W + 8; b.y = b.y0 = 64; break; } }
@@ -1406,6 +1413,19 @@ static void drawResident(float x, float fy, double now, int kind, int seed, floa
   else if (kind == 2) { R(x - 7, fy - 3, 11, 3, SK); R(x - 3, fy - 12, 7, 9, TN); R(x - 3, fy - 8, 7, 1, WHITE565); R(x - 2, fy - 17, 5, 4, SK); R(x + 1, fy - 16, 1, 1, rgb(0, 0, 0)); R(x - 3, fy - 18, 7, 1, G1); R(x - 4, fy - 23, 1, 5, TQ); R(x - 2, fy - 25, 1, 7, RD); R(x, fy - 24, 1, 6, GR); R(x + 2, fy - 22, 1, 4, TQ); seg(x + 3, fy - 9, x + 8 + ((int)floor(now * 2 + seed) & 1), fy - 6, SK, 1); }
   else { const int br = (int)floor(now * 1.2 + seed) & 1; R(x - 10, fy - 2, 22, 2, rgb(190, 60, 50)); R(x - 9, fy - 6 - br, 13, 4, TN); R(x - 15, fy - 5, 6, 3, SK); R(x + 4, fy - 7, 5, 4, SK); R(x + 9, fy - 8, 7, 2, TQ); R(x + 9, fy - 6, 6, 2, RD); R(x + 6, fy - 5, 1, 1, rgb(0, 0, 0)); if ((int)floor(now * 1.5 + seed) & 1) { R(x + 12, fy - 14, 2, 1, WHITE565); R(x + 14, fy - 18, 2, 1, WHITE565); } }   // sleeping, with a drifting z
 }
+static void drawCavernChasers(const Cavern& C, const CavTab& T, double now, const AudioIn& A, float gb) {   // the guardians behind him; the first wears the carved mask
+  const auto& c = C.chase; const float t = c.t;
+  for (int i = 2; i >= 0; i--) {
+    float x = lp(-26.0f - i * 16, HX - 26.0f - i * 13 + 8 * A.level, sm01(cl01(t / 1.8f))); if (t > 8.5f) x -= (t - 8.5f) * 45;
+    if (c.stuck) { const float ex = HX + c.wx0 - 8 - i * 13 - C.scroll; if (ex < x) x = ex; else if (x > ex) x = ex;   // at the edge they stop dead, and the rope leaves them behind
+      if (x < -30) continue; if (i == 0) drawMaskedHunter((float)rnd(x), gb, 0); else drawWarrior((float)rnd(x), gb, now, i, 0, A.pulse, true); continue; }
+    if (x < -30) continue;
+    const float wx = C.scroll + (x - HX); float lift = 0;
+    for (int n = 0; n < T.nst; n++) { const CavSt& st = T.st[n]; if (st.lvl != C.lvl) continue; const float hd = st.kind == ST_GAP ? 24.0f : st.kind == ST_PIT ? 34.0f : 14.0f, c0 = (st.kind == ST_GAP || st.kind == ST_PIT) ? (float)st.xs : st.xs + 5.0f, d = fabsf(wx - c0); if (d < hd) lift = fmaxf(lift, 15 * sinf((float)M_PI * (1 - d / hd))); }   // over the gaps and the ladder holes
+    const float fy = gb - rnd(lift);
+    if (i == 0) drawMaskedHunter((float)rnd(x), fy, HC.ph); else drawWarrior((float)rnd(x), fy, now, i, HC.ph, A.pulse);
+  }
+}
 static void drawCavern(Game& G, const AudioIn& A, double now) {
   const Cavern& C = G.cn; const CavTab& T = cavTab(); const float sc = C.scroll; const auto& m = C.mv;
   const uint16_t ORG = rgb(212, 124, 42), ORD = rgb(150, 84, 26);
@@ -1437,11 +1457,13 @@ static void drawCavern(Game& G, const AudioIn& A, double now) {
   for (int i = 0; i < T.ng; i++) { const CavGoldP& p = T.gold[i]; if (C.taken[i]) continue; const int x = rnd(HX + p.x - sc); if (x > -10 && x < W + 10 && vis((float)CFL(p.lvl))) drawGold((float)x, (float)CFL(p.lvl), now); }
   R(0, CWATER, W, 300, rgb(30, 50, 200)); for (int x = 0; x < W; x += 4) { const int wy = CWATER + rnd(tsin((x + now * 40) * 0.12) * 1); R(x, wy, 4, 2, rgb(110, 140, 255)); }   // the river below
   { const int wy0 = (int)floorf((-cam - 10) / 6.0f) * 6; R(W - 12, wy0, 12, CWATER - wy0, rgb(150, 110, 50)); for (int y = wy0; y < CWATER; y += 6) R(W - 12 + (((y % 5) + 5) % 5), y, 5, 3, rgb(110, 76, 32)); }   // the rock wall at the right
+  if (C.chase.live && !m.live) { drawCavernChasers(C, T, now, A, (float)CFL(C.lvl));
+    if (C.chase.attack > 0 && C.chase.attack < 0.28f) { const int ay = CFL(C.lvl) - 19; seg((float)(HX - 25), (float)(ay + 4), (float)(HX + 3), (float)ay, rgb(190, 160, 104), 1); R(HX + 2, ay - 2, 4, 3, rgb(216, 224, 226)); } }   // the nearest guardian jabs at the intruder
   for (int i = 0; i < T.nst; i++) { const CavSt& st = T.st[i]; if (st.kind != ST_ROPE) continue; const int xa = rnd(HX + st.xs - sc); if (xa < -50 || xa > W + 50 || !vis((float)CFL(st.lvl))) continue;   // a rope hung
     const int att = CFL(st.lvl) - 44; float ex = (float)(xa + rnd(3 * tsin(now * 2))), ey = (float)(att + 36);
     if (m.live && m.kind == CM_SWING && st.lvl == C.lvl) { const float dx = st.xs - sc, fy = att + sqrtf(fmaxf(1.0f, 36 * 36 - fminf(35 * 35, dx * dx))) + 23; ex = HX + 3; ey = fy - 23; }
     R(xa - 3, att - 4, 6, 4, ORD); seg((float)xa, (float)att, ex, ey, rgb(200, 160, 96), 1); for (int k = 1; k < 6; k++) R((float)rnd(lp((float)xa, ex, k / 6.0f)) - 1, (float)rnd(lp((float)att, ey, k / 6.0f)), 2, 1, rgb(140, 100, 56)); R(ex - 1, ey, 3, 3, rgb(200, 160, 96)); }
-  float y = (float)CFL(C.lvl); HeroMode mode = HM_RUN;
+  float y = (float)CFL(C.lvl); HeroMode mode = C.duck ? HM_HIDE : HM_RUN;
   if (m.live && (m.kind == CM_DROP || m.kind == CM_MISS)) { const float yy = m.from + 300 * m.t * m.t; y = fminf((float)(CWATER + 2), (float)rnd(yy)); if (yy > CWATER) R(HX - 8, CWATER - 2, 16, 3, WHITE565); drawHero(HX, y, now, HM_PLUNGE); }
   else if (m.live && m.kind == CM_SWING) { const float dx = m.xs - sc; SWING_K = fmaxf(-1.0f, fminf(1.0f, dx / 29)); drawHero(HX, (float)rnd(CFL(C.lvl) - 44 + sqrtf(fmaxf(1.0f, 36 * 36 - fminf(35 * 35, dx * dx))) + 23), now, HM_SWING); }
   else if (m.live) { const float q = cl01(m.t / 2.0f); const int hy2 = rnd(lp((float)CFL(C.lvl), (float)CFL(C.lvl - 1), q)), z = 40 + (CFL(C.lvl) - hy2); gOffY = cam + hy2 - GY; drawLadderHero(HX, (float)z, 1); gOffY = cam; }
