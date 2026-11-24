@@ -1361,28 +1361,9 @@ static void drawMural(int k, float x, float y, double now, bool glow) {   // wal
     R(x + 12, y + 7, 28, 23, TQ); R(x + 15, y + 10, 22, 17, GD); R(x + 16, y + 6, 20, 7, RD); R(x + 20, y + 16, 3, 2, BK); R(x + 30, y + 16, 3, 2, BK); R(x + 23, y + 22, 8, 2, RD);
     return; }
   if (k == 4 || k == 5) { R(x + 3, y + 3, 46, 30, OR); R(x + 9, y + 12, 9, 7, GD); R(x + 33, y + 12, 9, 7, GD); R(x + 20, y + 24, 12, 3, TQ); return; }   // the robot and the rabbit portraits' stand-in
-  if (k == 3) {   // the Sun Stone: concentric rings of rays, glyph sectors and dots round a gold face with a red tongue; the face glows on the beat
-    const float cx = x + 26, cy = y + 18;
-    static uint8_t SUN[33 * 33]; static bool sunReady = false;   // the stone's colours worked out once (atan2 and sqrt for 1089 pixels every frame cost ~15 ms on the device); 0 none, 1 black, 2 gold, 3 turquoise, 4 red, 5 orange, 6 face
-    if (!sunReady) { sunReady = true;
-      for (int yy = -16; yy <= 16; yy++) for (int xx = -16; xx <= 16; xx++) {
-        const float d = sqrtf((float)(xx * xx + yy * yy)); uint8_t c = 0; if (d <= 16.2f) {
-          const float an = atan2f((float)yy, (float)xx) + 3.1416f; const int s20 = (int)floorf(an / 0.314f), s45 = (int)floorf(an / 0.785f);
-          if (d > 15.2f) c = 1;
-          else if (d > 12.8f) c = ((s20 & 1) && d > 13.6f && d < 14.6f) ? 2 : 3;   // outer turquoise ring with gold dots
-          else if (d > 10.8f) c = (s20 & 1) ? 4 : 5;   // ring of rays
-          else if (d > 9.8f) c = 1;
-          else if (d > 7.8f) c = (s45 & 1) ? 3 : 5;   // glyph sectors
-          else if (d > 7) c = 1;
-          else c = 6; }   // the gold face
-        SUN[(yy + 16) * 33 + xx + 16] = c; } }
-    const uint16_t pal[7] = {0, BK, GD, TQ, RD, OR, glow ? PALEG : GD};
-    for (int yy = 0; yy < 33; yy++) for (int xx = 0; xx < 33;) {
-      const uint8_t c = SUN[yy * 33 + xx]; int e = xx + 1; while (e < 33 && SUN[yy * 33 + e] == c) e++;
-      if (c) R(cx + xx - 16, cy + yy - 16, e - xx, 1, pal[c]);
-      xx = e; }
-    for (int i = 0; i < 4; i++) { const float an = 0.785f + i * 1.571f; R(cx + cosf(an) * 8.8f - 1, cy + sinf(an) * 8.8f - 1, 2, 2, RD); }   // four glyph squares
-    R(cx - 5, cy - 4, 3, 3, BK); R(cx + 2, cy - 4, 3, 3, BK); R(cx - 4, cy - 3, 1, 1, TQ); R(cx + 3, cy - 3, 1, 1, TQ); R(cx - 3, cy + 1, 7, 2, BK); R(cx - 2, cy + 2, 5, 4, RD); R(cx - 1, cy + 2, 3, 1, CR);
+  if (k == 3) {   // the Sun Stone, as a few plain blocks like the other paintings: a turquoise ground, an orange disc, a gold face with a red tongue (it glows on the beat)
+    R(x + 3, y + 3, 46, 30, TQ); R(x + 12, y + 4, 28, 28, OR); R(x + 8, y + 8, 36, 20, OR); R(x + 15, y + 9, 22, 18, glow ? PALEG : GD); R(x + 13, y + 12, 26, 12, glow ? PALEG : GD);
+    R(x + 19, y + 13, 4, 3, BK); R(x + 29, y + 13, 4, 3, BK); R(x + 21, y + 20, 10, 2, BK); R(x + 23, y + 21, 6, 5, RD); R(x + 24, y + 21, 4, 1, CR);
     return; }
   // a stiff profile figure (k 0: turquoise body facing right, k 1: black body facing left): striding legs, a belly disc, a tall feather fan, one arm up with a staff
   const bool fl = k == 1; const uint16_t body = fl ? BK : TQ, fan = fl ? RD : OR; const float ox = x;
