@@ -2,9 +2,30 @@
 
 **After the space war, the next stage is an ancient ruin. The beat stirs my soul.**
 
+<table>
+<tr>
+<td valign="top" width="480">
+
 BeatAdventure is a music-driven adventure game for the M5Stack Cardputer ADV (240 x 135 screen). Play any music, and an explorer runs,
 climbs, swims and falls through a jungle, a treasure vault and an ancient pyramid, to the beat. Loud parts brighten the world and bring more
 danger; quiet parts darken it and make everything wait. **You do not play; you watch and listen.**
+
+It is a sister of [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker): the same firmware (USB speaker, USB and BLE
+keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a microSD card) with the game as its screen.
+
+**Play the web demo in your browser first: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**
+This firmware was ported from it, and the web demo is the reference for how everything should look and behave.
+
+[日本語](README_JA.md)
+
+</td>
+<td valign="top" width="360">
+
+<img src="docs/images/poster_en.jpg" alt="BeatAdventure poster: an explorer swings over a jungle river past a liner, hunters, a golden temple face, a waterfall and a pyramid, with sound bars winding through it all" width="360">
+
+</td>
+</tr>
+</table>
 
 ## Why you only watch
 
@@ -19,14 +40,6 @@ music. Whether he falls into a pit or ducks a boulder, you can stay where you al
 head.
 
 "Go on, you can do it!"
-
-It is a sister of [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker): the same firmware (USB speaker, USB and BLE
-keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a microSD card) with the game as its screen.
-
-**Play the web demo in your browser first: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**
-This firmware was ported from it, and the web demo is the reference for how everything should look and behave.
-
-[日本語](README_JA.md)
 
 ## What you will see
 
@@ -46,6 +59,10 @@ One long journey that loops. Every place reacts to the music:
 
 There is no text on the game screen while it plays, except two short titles in the treasury ("THE TREASURY" on arrival, "GOLDEN MASK" when he
 takes the mask).
+
+<a href="docs/images/field_guide_en.png"><img src="docs/images/field_guide_en.png" alt="BeatAdventure instruction card: four places of the journey, and how to listen, what the keys do, and the camp" width="360"></a>
+
+(Click the card to see it large.)
 
 ## What you need
 

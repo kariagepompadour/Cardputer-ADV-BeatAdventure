@@ -2,9 +2,30 @@
 
 **宇宙大戦の次の舞台は、古代遺跡だ！ ビートが、俺の魂を奮い立たせる。**
 
+<table>
+<tr>
+<td valign="top" width="480">
+
 BeatAdventure は、M5Stack Cardputer ADV(画面 240 x 135)用の、音楽で動く冒険ゲームです。好きな音楽を流すと、探検家がジャングル、宝倉庫、
 古代のピラミッドを、拍に合わせて走り、登り、泳ぎ、落ちていきます。大きな音では世界が明るくなって危険が増え、静かな音では暗くなって、
 すべてが息をひそめます。**遊ぶのではなく、眺めて、聴くゲームです。**
+
+[KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker) の姉妹品です。同じファームウェア(USB スピーカー、USB と BLE
+のキーボード、エアマウス、ジョグダイヤル、内蔵マイク、Pico 2 の AUX ユニット、microSD の MP3)の画面が、このゲームになっています。
+
+**まずはブラウザで遊べます: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**
+この実機版は、この WEB 版を元に移植しました。見た目と動きの基準は、WEB 版です。
+
+[English](README.md)
+
+</td>
+<td valign="top" width="360">
+
+<img src="docs/images/poster_ja.jpg" alt="BeatAdventureのポスター：探検家がツルで密林の川を渡り、客船、狩人、黄金の神殿、滝、ピラミッドが並び、音の棒が全体を縫う" width="360">
+
+</td>
+</tr>
+</table>
 
 ## 眺めるだけのゲーム
 
@@ -18,14 +39,6 @@ BeatAdventure は、あのときの気持ちのためのゲームです。ボタ
 彼が穴に落ちても、岩にかがんでも、あなたは、あの頃のまま、後ろから眺めて、好きに口出ししていればいいのです。
 
 「がんばれ！」
-
-[KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker) の姉妹品です。同じファームウェア(USB スピーカー、USB と BLE
-のキーボード、エアマウス、ジョグダイヤル、内蔵マイク、Pico 2 の AUX ユニット、microSD の MP3)の画面が、このゲームになっています。
-
-**まずはブラウザで遊べます: https://kariagepompadour.github.io/BeatAdventure-WEB-DEMO/**
-この実機版は、この WEB 版を元に移植しました。見た目と動きの基準は、WEB 版です。
-
-[English](README.md)
 
 ## どんな場面が出るか
 
@@ -43,6 +56,10 @@ BeatAdventure は、あのときの気持ちのためのゲームです。ボタ
    1日進んで再開します。
 
 遊んでいる間、画面に文字は出ません。ただし、宝倉庫の短い題字 2つ(入ったときの「THE TREASURY」と、仮面を取ったときの「GOLDEN MASK」)だけは出ます。
+
+<a href="docs/images/field_guide_ja.png"><img src="docs/images/field_guide_ja.png" alt="BeatAdventureのインストラクションカード：旅の4つの場所と、音の聴かせ方、キー、キャンプ" width="360"></a>
+
+(カードをクリックすると、大きく見えます。)
 
 ## 必要なもの
 
