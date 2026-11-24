@@ -44,6 +44,16 @@ int main() {
     printf("%s  waterway: entered at %.0f s, splash-in %d, reached the source %d, river life %d, scrolled %.0f of %.0f, left at %.0f s\n", ok ? "ok  " : "FAIL", enteredAt, (int)entry, (int)exitSeen, objs, maxScroll, (double)WATERWAY_LEN, leftAt);
     if (!ok) bad++;
   }
+  {   // after the waterway: the geyser (4.9 s), then the fall over the pyramid (3.3 s)
+    Game G; gameInit(G, 0); setScene(G, SC_WATERWAY, 0);
+    static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
+    double t = 0; const float dt = 1.0f / 30; double fountainAt = 0, skyAt = 0, leftAt = 0;
+    for (int f = 0; f < 30 * 60; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t);
+      if (G.scene == SC_FOUNTAIN && !fountainAt) fountainAt = t; if (G.scene == SC_SKYFALL && !skyAt) skyAt = t; if (G.scene != SC_WATERWAY && G.scene != SC_FOUNTAIN && G.scene != SC_SKYFALL) { leftAt = t; break; } }
+    const bool ok = fountainAt > 0 && skyAt > 0 && fabs((skyAt - fountainAt) - 4.9) < 0.2 && (leftAt - skyAt) > 3.3 && (leftAt - skyAt) < 4.3;   // the black fade out of it (until the pyramid is ported) comes after 3.3 s
+    printf("%s  geyser and skyfall: fountain at %.1f s, sky at %.1f s (%.1f s later), left at %.1f s (%.1f s later)\n", ok ? "ok  " : "FAIL", fountainAt, skyAt, skyAt - fountainAt, leftAt, leftAt - skyAt);
+    if (!ok) bad++;
+  }
   {   // the treasury: from the bottom floor up through ladders, gaps and ropes to the pit on the top floor; gold on the way
     Game G; gameInit(G, 0); setScene(G, SC_CAVERN, 0);
     static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
