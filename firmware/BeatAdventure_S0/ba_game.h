@@ -474,7 +474,7 @@ static void updateCavern(Game& G, const AudioIn& A, float dt, double now) {
   if (!C.mv.live) {
     for (int i = 0; i < T.nst; i++) { const CavSt& st = T.st[i]; const float dx = st.xs - C.scroll;
       if (st.lvl != C.lvl || C.done[i]) continue;
-      if (st.kind == ST_GAP && C.jump < 0 && dx <= 28 && dx > 0) { const bool shortJ = C.lvl == NF - 1 && A.sounding && A.level < 0.55f; C.jd = shortJ ? 0.36f : A.sounding ? JD : 0.82f; C.jh = shortJ ? 20.0f : JH; C.jump = 0; C.done[i] = true; }   // a slow silent run still clears an ordinary gap
+      if (st.kind == ST_GAP && C.jump < 0 && dx <= 28 && dx > 0) { const bool shortJ = C.lvl == NF - 1 && A.sounding && A.level < 0.35f; C.jd = shortJ ? 0.36f : A.sounding ? JD : 0.82f; C.jh = shortJ ? 20.0f : JH; C.jump = 0; C.done[i] = true; }   // a slow silent run still clears an ordinary gap
       else if (st.kind == ST_LADUP && dx <= 0 && C.jump < 0) { C.scroll = (float)st.xs; C.mv.live = true; C.mv.kind = CM_UP; C.mv.t = 0; C.done[i] = true; }
       else if (st.kind == ST_ROPE && dx <= 29 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_SWING; C.mv.t = 0; C.mv.xs = (float)st.xs; C.done[i] = true; if (C.chase.live) { C.chase.stuck = true; C.chase.t = fminf(C.chase.t, 6.0f); C.chase.wx0 = st.xs - 35.0f; } }   // a rope over a wide gap: he grabs it and swings across
       else if (st.kind == ST_PIT && dx <= 0 && C.jump < 0) { C.mv.live = true; C.mv.kind = CM_DROP; C.mv.t = 0; C.mv.from = (float)CFL(0); C.done[i] = true; } }
