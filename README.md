@@ -8,7 +8,7 @@ danger; quiet parts darken it and make everything wait. **You do not play; you w
 
 ## Why you only watch
 
-A new game has just arrived at the arcade. It looks wonderful, but the 100 yen in your pocket is precious, and not to be spent lightly. So you
+A new game has just arrived at the arcade. It looks wonderful, but the 100 yen in your pocket (a quarter, if you grew up in the US) is precious, and not to be spent lightly. So you
 stand behind the player with the coin tight in your fist, looking over their shoulder, and that is enough. You are happy just to watch. And
 you keep talking to yourself: "I wouldn't do it like that." "Not there, more to the right!"
 
