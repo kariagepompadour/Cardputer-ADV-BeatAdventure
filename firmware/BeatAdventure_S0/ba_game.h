@@ -1363,17 +1363,24 @@ static void drawMural(int k, float x, float y, double now, bool glow) {   // wal
   if (k == 4 || k == 5) { R(x + 3, y + 3, 46, 30, OR); R(x + 9, y + 12, 9, 7, GD); R(x + 33, y + 12, 9, 7, GD); R(x + 20, y + 24, 12, 3, TQ); return; }   // the robot and the rabbit portraits' stand-in
   if (k == 3) {   // the Sun Stone: concentric rings of rays, glyph sectors and dots round a gold face with a red tongue; the face glows on the beat
     const float cx = x + 26, cy = y + 18;
-    for (int yy = -16; yy <= 16; yy++) for (int xx = -16; xx <= 16; xx++) {
-      const float d = sqrtf((float)(xx * xx + yy * yy)); if (d > 16.2f) continue;
-      const float an = atan2f((float)yy, (float)xx) + 3.1416f; const int s20 = (int)floorf(an / 0.314f), s45 = (int)floorf(an / 0.785f); uint16_t c;
-      if (d > 15.2f) c = BK;
-      else if (d > 12.8f) c = ((s20 & 1) && d > 13.6f && d < 14.6f) ? GD : TQ;   // outer turquoise ring with gold dots
-      else if (d > 10.8f) c = (s20 & 1) ? RD : OR;   // ring of rays
-      else if (d > 9.8f) c = BK;
-      else if (d > 7.8f) c = (s45 & 1) ? TQ : OR;   // glyph sectors
-      else if (d > 7) c = BK;
-      else c = glow ? PALEG : GD;   // the gold face
-      R(cx + xx, cy + yy, 1, 1, c); }
+    static uint8_t SUN[33 * 33]; static bool sunReady = false;   // the stone's colours worked out once (atan2 and sqrt for 1089 pixels every frame cost ~15 ms on the device); 0 none, 1 black, 2 gold, 3 turquoise, 4 red, 5 orange, 6 face
+    if (!sunReady) { sunReady = true;
+      for (int yy = -16; yy <= 16; yy++) for (int xx = -16; xx <= 16; xx++) {
+        const float d = sqrtf((float)(xx * xx + yy * yy)); uint8_t c = 0; if (d <= 16.2f) {
+          const float an = atan2f((float)yy, (float)xx) + 3.1416f; const int s20 = (int)floorf(an / 0.314f), s45 = (int)floorf(an / 0.785f);
+          if (d > 15.2f) c = 1;
+          else if (d > 12.8f) c = ((s20 & 1) && d > 13.6f && d < 14.6f) ? 2 : 3;   // outer turquoise ring with gold dots
+          else if (d > 10.8f) c = (s20 & 1) ? 4 : 5;   // ring of rays
+          else if (d > 9.8f) c = 1;
+          else if (d > 7.8f) c = (s45 & 1) ? 3 : 5;   // glyph sectors
+          else if (d > 7) c = 1;
+          else c = 6; }   // the gold face
+        SUN[(yy + 16) * 33 + xx + 16] = c; } }
+    const uint16_t pal[7] = {0, BK, GD, TQ, RD, OR, glow ? PALEG : GD};
+    for (int yy = 0; yy < 33; yy++) for (int xx = 0; xx < 33;) {
+      const uint8_t c = SUN[yy * 33 + xx]; int e = xx + 1; while (e < 33 && SUN[yy * 33 + e] == c) e++;
+      if (c) R(cx + xx - 16, cy + yy - 16, e - xx, 1, pal[c]);
+      xx = e; }
     for (int i = 0; i < 4; i++) { const float an = 0.785f + i * 1.571f; R(cx + cosf(an) * 8.8f - 1, cy + sinf(an) * 8.8f - 1, 2, 2, RD); }   // four glyph squares
     R(cx - 5, cy - 4, 3, 3, BK); R(cx + 2, cy - 4, 3, 3, BK); R(cx - 4, cy - 3, 1, 1, TQ); R(cx + 3, cy - 3, 1, 1, TQ); R(cx - 3, cy + 1, 7, 2, BK); R(cx - 2, cy + 2, 5, 4, RD); R(cx - 1, cy + 2, 3, 1, CR);
     return; }
