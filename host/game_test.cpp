@@ -50,8 +50,18 @@ int main() {
     double t = 0; const float dt = 1.0f / 30; double fountainAt = 0, skyAt = 0, leftAt = 0;
     for (int f = 0; f < 30 * 60; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t);
       if (G.scene == SC_FOUNTAIN && !fountainAt) fountainAt = t; if (G.scene == SC_SKYFALL && !skyAt) skyAt = t; if (G.scene != SC_WATERWAY && G.scene != SC_FOUNTAIN && G.scene != SC_SKYFALL) { leftAt = t; break; } }
-    const bool ok = fountainAt > 0 && skyAt > 0 && fabs((skyAt - fountainAt) - 4.9) < 0.2 && (leftAt - skyAt) > 3.3 && (leftAt - skyAt) < 4.3;   // the black fade out of it (until the pyramid is ported) comes after 3.3 s
+    const bool ok = fountainAt > 0 && skyAt > 0 && fabs((skyAt - fountainAt) - 4.9) < 0.2 && fabs((leftAt - skyAt) - 3.3) < 0.2 && G.scene == SC_PYRAMID;   // the fall ends on the pyramid after 3.3 s
     printf("%s  geyser and skyfall: fountain at %.1f s, sky at %.1f s (%.1f s later), left at %.1f s (%.1f s later)\n", ok ? "ok  " : "FAIL", fountainAt, skyAt, skyAt - fountainAt, leftAt, leftAt - skyAt);
+    if (!ok) bad++;
+  }
+  {   // the pyramid: three boulders at 3.2, 6.2 and 9.2 s; he crouches under each, then it ends in a fade
+    Game G; gameInit(G, 0); setScene(G, SC_PYRAMID, 0);
+    static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
+    double t = 0; const float dt = 1.0f / 30; int duckF = 0, lookF = 0, maxLive = 0; double leftAt = 0; float scrollAtDuck = -1;
+    for (int f = 0; f < 30 * 40; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); if (G.scene != SC_PYRAMID) { leftAt = t; break; }
+      if (G.py.duck) { duckF++; if (scrollAtDuck < 0) scrollAtDuck = G.py.scroll; } if (G.py.look) lookF++; int n = 0; for (const Pyramid::Rock& r : G.py.rocks) if (r.live) n++; if (n > maxLive) maxLive = n; }
+    const bool ok = G.py.rockN == 3 && G.py.passed == 3 && duckF > 30 && lookF > 15 && maxLive >= 1 && leftAt > 11 && leftAt < 20 && G.next == SC_LINER;
+    printf("%s  pyramid: rocks %d passed %d, crouched %d frames, glanced back %d frames, left at %.1f s\n", ok ? "ok  " : "FAIL", G.py.rockN, G.py.passed, duckF, lookF, leftAt);
     if (!ok) bad++;
   }
   {   // the treasury: from the bottom floor up through ladders, gaps and ropes to the pit on the top floor; gold on the way

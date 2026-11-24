@@ -148,7 +148,14 @@ struct Cavern {
   bool duck = false;   // he ducks the spear thrust
 };
 
-enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_CAVE, SC_CAVERN, SC_WATERWAY, SC_FOUNTAIN, SC_SKYFALL, SC_COUNT };
+enum Scene : uint8_t { SC_LINER, SC_BEACH, SC_FOREST, SC_WALL, SC_VINES, SC_BOAT, SC_RIVER, SC_FOREST3, SC_CAVE, SC_CAVERN, SC_WATERWAY, SC_FOUNTAIN, SC_SKYFALL, SC_PYRAMID, SC_COUNT };
+
+constexpr int PYRAMID_X = 120;
+constexpr float PYRAMID_ROCK_TIMES[3] = {3.2f, 6.2f, 9.2f};
+struct Pyramid {   // the sunlit outer wall: three boulders bounce down the steps, he ducks under each one
+  struct Rock { bool live = false; float x = 0, speed = 0; };
+  Rock rocks[3]; int rockN = 0, passed = 0; float scroll = 0; bool look = false, duck = false;
+};
 
 struct Game {
   Scene scene = SC_LINER, next = SC_LINER;
@@ -166,13 +173,15 @@ struct Game {
   River rv;
   Cave cv;
   Cavern cn;
+  Pyramid py;
   float treble = 0;
 };
 
 static void setScene(Game& G, Scene s, double now) {
   G.scene = s; G.t0 = now;
-  if (s == SC_FOUNTAIN || s == SC_SKYFALL) G.visualDark = 0;   // bright and clear, no dimming
+  if (s == SC_FOUNTAIN || s == SC_SKYFALL || s == SC_PYRAMID) G.visualDark = 0;   // bright and clear, no dimming
   if (s == SC_LINER) new (&G.cl) Liner();
+  if (s == SC_PYRAMID) new (&G.py) Pyramid();
   if (s == SC_WALL) new (&G.wl) Wall();
   if (s == SC_VINES) new (&G.vn) Vines();
   if (s == SC_BOAT) new (&G.bt) Boat();
@@ -545,7 +554,7 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
     if (!near) { G.hide = true; G.hideT = 0; }
   }
   if (G.hide) { G.hideT += dt; if (G.hideT > 5.9f || (A.level > 0.5f && G.hideT > 1)) { G.hide = false; G.quietT = -12; } }
-  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop))) || (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind != CM_SWING) || (G.scene == SC_WATERWAY && G.rv.exitLive)) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
+  G.sp = ((G.hide || (onLand(G) && (G.bc.find.live || G.bc.fall.live)) || (G.scene == SC_CAVE && (G.cv.mv.live || G.cv.cartS == 2 || (G.cv.boulder.live && G.cv.boulder.stop))) || (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind != CM_SWING) || (G.scene == SC_WATERWAY && G.rv.exitLive) || (G.scene == SC_PYRAMID && G.py.duck)) ? 0.0f : 1 - 0.4f * G.sneak) * (onLand(G) && G.bc.hunter.live ? 1.2f : 1.0f);   // with a hunter behind him he keeps running
   if (G.scene == SC_CAVERN && G.cn.mv.live && G.cn.mv.kind == CM_SWING) G.sp = 0.7f;   // swinging on a rope
   if (G.scene == SC_CAVE) {   // in the mine cart the tunnel races past, faster in loud music
     Cave& L = G.cv; L.vm = (L.cart && !L.mv.live) ? (1.45f + 0.5f * A.level) * (0.25f + 0.75f * sm01(cl01(L.rideT / 1.5f))) * fmaxf(0.6f, fminf(1.6f, 1 - 2.2f * (labH(L, L.scroll + 4) - labH(L, L.scroll - 4)) / 8)) : 1.0f; G.sp *= L.vm; }
@@ -558,7 +567,16 @@ static void gameUpdate(Game& G, const AudioIn& A, float dt, double now) {
   else if (G.scene == SC_WALL) updateWall(G, A, dt, now);
   else if (G.scene == SC_RIVER || G.scene == SC_WATERWAY) updateRiver(G, A, dt, now);
   else if (G.scene == SC_FOUNTAIN) { if (now - G.t0 > 4.9) setScene(G, SC_SKYFALL, now); }   // the geyser throws him out of the top of the building
-  else if (G.scene == SC_SKYFALL) { if (now - G.t0 > 3.3 && !G.fadeDir) switchTo(G, SC_LINER); }   // he lands on the pyramid in the web demo; until it is ported, the story starts again
+  else if (G.scene == SC_SKYFALL) { if (now - G.t0 > 3.3) setScene(G, SC_PYRAMID, now); }   // he lands on the sunlit outer wall
+  else if (G.scene == SC_PYRAMID) {
+    Pyramid& P = G.py; const float el = (float)(now - G.t0); P.scroll += V * G.sp * dt;
+    while (P.rockN < 3 && el >= PYRAMID_ROCK_TIMES[P.rockN]) { Pyramid::Rock& r = P.rocks[P.rockN]; r.live = true; r.x = -20; r.speed = 60.0f + (P.rockN % 3) * 4; P.rockN++; }
+    for (Pyramid::Rock& r : P.rocks) if (r.live) { r.x += r.speed * dt; if (r.x >= W + 20) { r.live = false; P.passed++; } }
+    const float runX = PYRAMID_X + rnd(24 * sm01(cl01(el / 0.9f)));
+    P.look = P.duck = false;
+    for (const Pyramid::Rock& r : P.rocks) if (r.live) { if (r.x > runX - 90 && r.x <= runX - 45) P.look = true; if (r.x > runX - 45 && r.x < runX + 25) P.duck = true; }
+    if (P.passed >= 3 && !G.fadeDir) switchTo(G, SC_LINER);   // the jungle is not ported yet: the story starts again
+  }
   else if (G.scene == SC_CAVE) updateCave(G, A, dt, now);
   else if (G.scene == SC_CAVERN) updateCavern(G, A, dt, now);
   else if (G.scene == SC_BOAT) {
@@ -1101,7 +1119,6 @@ static void drawRiverSnake(float x, float y, double now) {   // a long green bod
   R(x - 8, y - 3, 9, 6, body); R(x - 7, y - 4, 5, 2, shade); R(x - 6, y - 1, 1, 1, rgb(252, 224, 100));
   if (tsin(now * 6) > 0) { R(x - 11, y + 1, 3, 1, rgb(214, 82, 83)); R(x - 12, y, 1, 3, rgb(214, 82, 83)); }
 }
-constexpr int PYRAMID_X = 120;
 static void drawFountain(const Game& G, double now) {   // the geyser throws him upward while the inside of the building rushes downward
   const float t = (float)(now - G.t0); const int off = rnd(t * 185);
   R(0, 0, W, H, rgb(18, 23, 38));
@@ -1131,6 +1148,22 @@ static void drawSkyfall(const Game& G, double now) {   // after leaving the wate
   HC.slope = 0; HC.wob = 0; AIR_U = 0;
   if (t > 0.35f) drawHero((float)PYRAMID_X, (float)feet, now, u > 0.86f ? HM_AIR : HM_PLUNGE);
   for (int i = 0; i < 7; i++) { const int y = feet + 13 + i * 3; R(PYRAMID_X - 5 + (i * 7) % 12, y, 1, 2, (i & 1) ? WHITE565 : rgb(164, 230, 255)); }
+}
+static void drawPyramid(const Game& G, double now) {   // the falling hero has landed on the sunlit stepped outer wall
+  const Pyramid& P = G.py; const float t = (float)(now - G.t0);
+  const int runX = PYRAMID_X + rnd(24 * sm01(cl01(t / 0.9f)));
+  drawPyramidBackdrop(0, 0, 0, P.scroll);
+  if (t < 0.65f) for (int i = 0; i < 9; i++) { const float d = t * 20, x = PYRAMID_X + (i - 4) * (2 + d * 0.28f), y = 81 - sinf(i * 1.8f) * (4 + d) + d * 0.7f; R(rnd(x), rnd(y), 2, 2, (i & 1) ? WHITE565 : rgb(164, 230, 255)); }
+  HC.slope = 0; HC.wob = 0;
+  drawHero((float)runX, (float)(57 + (runX / 24) * 5), now, P.duck ? HM_ROCKCOVER : P.look ? HM_RUNLOOK : HM_RUN);
+  for (const Pyramid::Rock& rk : P.rocks) if (rk.live) {
+    const int x = rnd(rk.x), ground = 57 + (x > 0 ? x / 24 : 0) * 5; const float bounce = 22 * fabsf(sinf((rk.x + 12) * (float)M_PI / 62));
+    const int y = rnd(ground - 10 - bounce);
+    R(x - 8, ground + 1, 16, 1, rgb(102, 74, 53));
+    for (int dy = -10; dy <= 10; dy++) { const int half = (int)floorf(sqrtf((float)(100 - dy * dy))); R(x - half, y + dy, 2 * half + 1, 1, rgb(61, 58, 57)); if (half > 1) R(x - half + 1, y + dy, 2 * half - 1, 1, dy > 5 ? rgb(103, 99, 93) : rgb(137, 132, 122)); }
+    R(x - 5, y - 5, 4, 2, rgb(211, 204, 184)); R(x + 2, y - 3, 3, 2, rgb(91, 88, 83)); R(x - 1, y + 4, 4, 2, rgb(105, 100, 93));
+    if (bounce < 3) for (int i = 0; i < 3; i++) R(x - 10 + i * 8, ground - 2 - i % 2, 2, 1, rgb(201, 164, 107));
+  }
 }
 static void drawWaterSnake(int x, int y, double now) {   // a small snake undulates in place near the waterway wall
   const uint16_t body = rgb(104, 154, 78), back = rgb(53, 104, 65);
@@ -1593,8 +1626,8 @@ static void drawBeach(Game& G, const AudioIn& A, double now) {
 // One frame of the picture: the stage, the dark of a quiet part, the fade, and the level dots.
 static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
   FB = fb; gMirror = false;
-  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else if (G.scene == SC_RIVER || G.scene == SC_WATERWAY) drawRiver(G, A, now); else if (G.scene == SC_FOUNTAIN) drawFountain(G, now); else if (G.scene == SC_SKYFALL) drawSkyfall(G, now); else if (G.scene == SC_CAVE) drawCave(G, A, now); else if (G.scene == SC_CAVERN) drawCavern(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
-  const float kScene = (G.scene == SC_LINER || G.scene == SC_BEACH) ? 0.45f : (G.scene == SC_BOAT || G.scene == SC_CAVE || G.scene == SC_FOUNTAIN || G.scene == SC_SKYFALL) ? 0.0f : 1.0f;   // the web demo: less dark at sea and on the beach, none on the brook
+  if (G.scene == SC_LINER) drawLiner(G, A, now); else if (G.scene == SC_WALL) drawWall(G, A, now); else if (G.scene == SC_VINES) drawVines(G, now); else if (G.scene == SC_BOAT) drawBoatfall(G, A, now); else if (G.scene == SC_RIVER || G.scene == SC_WATERWAY) drawRiver(G, A, now); else if (G.scene == SC_FOUNTAIN) drawFountain(G, now); else if (G.scene == SC_SKYFALL) drawSkyfall(G, now); else if (G.scene == SC_PYRAMID) drawPyramid(G, now); else if (G.scene == SC_CAVE) drawCave(G, A, now); else if (G.scene == SC_CAVERN) drawCavern(G, A, now); else drawBeach(G, A, now);   // the beach and the forest share the hero, the obstacles and the events
+  const float kScene = (G.scene == SC_LINER || G.scene == SC_BEACH) ? 0.45f : (G.scene == SC_BOAT || G.scene == SC_CAVE || G.scene == SC_FOUNTAIN || G.scene == SC_SKYFALL || G.scene == SC_PYRAMID) ? 0.0f : 1.0f;   // the web demo: less dark at sea and on the beach, none on the brook
   float dark = (A.sounding ? fmaxf(0.0f, 0.5f - A.level * 0.9f) : 0.55f) * kScene;   // the quieter it gets, the darker
   G.visualDark = G.visualDark < 0 ? dark : G.visualDark + (dark - G.visualDark) * (1.0f - powf(1.0f - 0.018f, 60.0f * G.dt));
   if (G.visualDark > 0) fillA(0, 0, W, H, 0, 0, 12, G.visualDark);
@@ -1603,6 +1636,6 @@ static void gameRender(Game& G, const AudioIn& A, uint16_t* fb, double now) {
 }
 
 // The name of the stage for the status line.
-static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : G.scene == SC_FOREST3 ? "FOREST" : G.scene == SC_CAVE ? "TUNNEL" : G.scene == SC_CAVERN ? "TREASURY" : G.scene == SC_WATERWAY ? "WATERWAY" : G.scene == SC_FOUNTAIN ? "FOUNTAIN" : G.scene == SC_SKYFALL ? "SKYFALL" : "LINER"; }
+static const char* gameStageName(const Game& G) { return G.scene == SC_BEACH ? "BEACH" : G.scene == SC_FOREST ? "FOREST 2" : G.scene == SC_WALL ? "WALL" : G.scene == SC_VINES ? "VINES" : G.scene == SC_BOAT ? "BOAT+FALLS" : G.scene == SC_RIVER ? "RIVER" : G.scene == SC_FOREST3 ? "FOREST" : G.scene == SC_CAVE ? "TUNNEL" : G.scene == SC_CAVERN ? "TREASURY" : G.scene == SC_WATERWAY ? "WATERWAY" : G.scene == SC_FOUNTAIN ? "FOUNTAIN" : G.scene == SC_SKYFALL ? "SKYFALL" : G.scene == SC_PYRAMID ? "PYRAMID" : "LINER"; }
 
 }  // namespace beatadv

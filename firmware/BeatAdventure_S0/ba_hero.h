@@ -79,7 +79,7 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH, HM_CROUCH };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH, HM_CROUCH, HM_ROCKCOVER, HM_RUNLOOK };
 static float FIND_T = 0, HERO_PULSE = 0;   // seconds since he stopped at the treasure (the web demo's S.fnd), and the beat's pulse
 static float AIR_U = 0;
 static float SWING_K = 0;   // how far along its arc the vine is, -1..1 (the web demo's S.swK)   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
@@ -150,6 +150,15 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawLeg(L2, hx, hy, true); armTo(sx, sy, hxT - 1, hyT + 1, true); drawBody(hx, hy, lean); drawLeg(legAF(hx, hy, 12 - 26 * sk, 22 + 12 * fabsf(sk)), hx, hy, false); armTo(sx, sy, hxT, hyT, false);
     return;
   }
+  if (mode == HM_ROCKCOVER) {   // crouch low and cover the hat and head with both hands as the boulder passes
+    const float hx = x, hy = feetY - 4, lean = 46 * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+    drawLeg(legAF(hx - 1, hy, 76, 132), hx - 1, hy, true);
+    armTo(sx, sy, sx - 3, sy - 5, true, -1);
+    drawBody(hx, hy, lean);
+    drawLeg(legAF(hx, hy, 70, 128), hx, hy, false);
+    armTo(sx, sy, sx + 3, sy - 5, false);
+    return;
+  }
   if (mode == HM_HIDE) {   // crouched small behind the bush: knees up, back bent, head down, arms round the knees
     const float hx = x, lean = 52 * DEG;
     const Leg L1 = legAF(hx, 0, 68, 128);
@@ -182,7 +191,7 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
   }
   float sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
   drawLeg(lb, hx, hy, true); drawArm(sx, sy, sw1, bend1, true);   // far leg and far arm first
-  drawBody(hx, hy, lean, 0, false);
+  drawBody(hx, hy, lean, 0, mode == HM_RUNLOOK);
   drawLeg(la, hx, hy, false); drawArm(sx, sy, sw0, bend0, false);
 }
 
