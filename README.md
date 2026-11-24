@@ -8,9 +8,11 @@ danger; quiet parts darken it and make everything wait. **You do not play; you w
 
 ## Why you only watch
 
-A new game has just arrived at the arcade. It looks wonderful, but the 100 yen in your pocket (a quarter, if you grew up in the US) is precious, and not to be spent lightly. So you
-stand behind the kid who is playing, the coin in your fist slick with sweat from excitement, looking over their shoulder, and that is enough. You are happy just to watch. And
-you keep talking to yourself: "I wouldn't do it like that." "Not there, more to the right!"
+Even with no money, just being in the arcade was thrilling.
+Then a new game arrived. It looked wonderful, but the 100 yen in your pocket (a quarter, if you grew up in the US) was precious, and not to be
+spent lightly. So you stood behind the kid who was playing, the coin in your fist slick with sweat from excitement, looking over their
+shoulder, and that was enough. You were happy just to watch. And you kept talking to yourself: "I wouldn't do it like that." "Not there, more
+to the right!"
 
 BeatAdventure is made for that feeling. You press no button and insert no coin. The explorer goes on his adventure by himself, to your
 music. Whether he falls into a pit or ducks a boulder, you can stay where you always stood, behind him, watching and shouting in your head.
