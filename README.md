@@ -72,18 +72,23 @@ takes the mask).
 
 ## Install
 
-There is no ready-made image yet: build it yourself, then install the app through a launcher.
+Two ways:
 
-```bash
-firmware/build.sh BeatAdventure_S0
-```
+- **With M5Burner (the easy way):** choose **CARDPUTER**, search for **BeatAdventure** ("Cardputer ADV BeatAdventure" by kariagepompadour)
+  and burn it. This writes the whole flash: the launcher and any other apps on the Cardputer are replaced (you can burn KeySpeaker or
+  the launcher back from M5Burner at any time). It was burned this way onto one Cardputer ADV, which then started straight into the game.
+- **With a launcher (keeps your other apps):** build the app yourself and install the app-only file through the launcher.
 
-This needs `arduino-cli`, the `m5stack:esp32` core 3.3.10 and the libraries M5Cardputer, M5Unified and M5GFX (the settings are those of
-KeySpeaker; see `firmware/build.sh`). It makes the app-only `BeatAdventure_S0.ino.bin`, about 1.2 MB. Install that file through a launcher.
-Do not use the Arduino IDE's **Upload**: it also writes the bootloader and the partition table.
+  ```bash
+  firmware/build.sh BeatAdventure_S0
+  ```
 
-If your launcher's web upload fails (on the one device it was tried on it failed with "Update Fail: 3"), check the size of the launcher's
-app slot. On that device the slot was about 1.18 MB, smaller than the image, which was the likely cause (not proven).
+  This needs `arduino-cli`, the `m5stack:esp32` core 3.3.10 and the libraries M5Cardputer, M5Unified and M5GFX (the settings are those of
+  KeySpeaker; see `firmware/build.sh`). It makes the app-only `BeatAdventure_S0.ino.bin`, about 1.2 MB.
+  Do not use the Arduino IDE's **Upload**: it also writes the bootloader and the partition table.
+
+  If your launcher's web upload fails (on the one device it was tried on it failed with "Update Fail: 3"), check the size of the launcher's
+  app slot. On that device the slot was about 1.18 MB, smaller than the image, which was the likely cause (not proven).
 
 ## Using it
 

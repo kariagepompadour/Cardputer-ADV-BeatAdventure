@@ -69,18 +69,23 @@ BeatAdventure は、あのときの気持ちのためのゲームです。ボタ
 
 ## 入れ方
 
-出来合いのイメージはまだありません。自分でビルドして、ランチャー経由でアプリを入れてください。
+2つの方法があります。
 
-```bash
-firmware/build.sh BeatAdventure_S0
-```
+- **M5Burnerで入れる(かんたんな方法)**: **CARDPUTER** を選び、**BeatAdventure**(kariagepompadourの「Cardputer ADV BeatAdventure」)を検索して書き込みます。
+  本体を丸ごと書き換えるので、Launcherやほかのアプリは消えます(KeySpeaker やLauncherは、M5Burnerからいつでも書き戻せます)。この方法で、
+  Cardputer ADV 1台に書き込んで、そのままゲームが始まることを確かめました。
+- **Launcherで入れる(ほかのアプリも残せます)**: アプリを自分でビルドして、アプリだけのファイルをLauncherから入れます。
 
-`arduino-cli`、`m5stack:esp32` コア 3.3.10、ライブラリ M5Cardputer、M5Unified、M5GFX が必要です(設定は KeySpeaker と同じです。`firmware/build.sh` を
-見てください)。アプリだけの `BeatAdventure_S0.ino.bin`(約 1.2 MB)ができるので、それをランチャー経由で入れます。
-Arduino IDE の **Upload** は、ブートローダーとパーティションテーブルも書き換えるので、使わないでください。
+  ```bash
+  firmware/build.sh BeatAdventure_S0
+  ```
 
-ランチャーの Web からのアップロードが失敗するときは(試した1台では、「Update Fail: 3」で失敗しました)、ランチャーのアプリの枠の大きさを確かめて
-ください。その1台では、枠が約 1.18 MB で、イメージより小さかったことが、たぶん原因でした(確かめてはいません)。
+  `arduino-cli`、`m5stack:esp32` コア 3.3.10、ライブラリ M5Cardputer、M5Unified、M5GFX が必要です(設定は KeySpeaker と同じです。
+  `firmware/build.sh` を見てください)。アプリだけの `BeatAdventure_S0.ino.bin`(約 1.2 MB)ができます。
+  Arduino IDE の **Upload** は、ブートローダーとパーティションテーブルも書き換えるので、使わないでください。
+
+  Launcherの Web からのアップロードが失敗するときは(試した1台では、「Update Fail: 3」で失敗しました)、Launcherのアプリの枠の大きさを確かめてください。
+  その1台では、枠が約 1.18 MB で、イメージより小さかったことが、たぶん原因でした(確かめてはいません)。
 
 ## 使い方
 
