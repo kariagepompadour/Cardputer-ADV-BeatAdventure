@@ -10,6 +10,8 @@ BeatAdventure is a music-driven adventure game for the M5Stack Cardputer ADV (24
 climbs, swims and falls through a jungle, a treasure vault and an ancient pyramid, to the beat. Loud parts brighten the world and bring more
 danger; quiet parts darken it and make everything wait. **You do not play; you watch and listen.**
 
+<img src="docs/images/photo_beach.jpg" alt="BeatAdventure running on a Cardputer ADV: the explorer runs along a beach with a liner and a setting sun, and a masked hunter is on the beach too" width="480">
+
 It is a sister of [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker): the same firmware (USB speaker, USB and BLE
 keyboard, air mouse, jog dial, built-in microphone, Pico 2 AUX unit, MP3 from a microSD card) with the game as its screen.
 

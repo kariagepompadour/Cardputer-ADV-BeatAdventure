@@ -10,6 +10,8 @@ BeatAdventure は、M5Stack Cardputer ADV(画面 240 x 135)用の、音楽で動
 古代のピラミッドを、拍に合わせて走り、登り、泳ぎ、落ちていきます。大きな音では世界が明るくなって危険が増え、静かな音では暗くなって、
 すべてが息をひそめます。**遊ぶのではなく、眺めて、聴くゲームです。**
 
+<img src="docs/images/photo_beach.jpg" alt="Cardputer ADV で動くBeatAdventure：探検家が、客船と夕日の見える浜辺を走り、浜辺には仮面の狩人もいる" width="480">
+
 [KeySpeaker](https://github.com/kariagepompadour/Cardputer-ADV-KeySpeaker) の姉妹品です。同じファームウェア(USB スピーカー、USB と BLE
 のキーボード、エアマウス、ジョグダイヤル、内蔵マイク、Pico 2 の AUX ユニット、microSD の MP3)の画面が、このゲームになっています。
 
