@@ -1,4 +1,4 @@
-うわ# BeatAdventure
+# BeatAdventure
 
 **宇宙大戦の次の舞台は、古代遺跡だ！ ビートが、俺の魂を奮い立たせる。**
 
