@@ -54,6 +54,24 @@ int main() {
     printf("%s  geyser and skyfall: fountain at %.1f s, sky at %.1f s (%.1f s later), left at %.1f s (%.1f s later)\n", ok ? "ok  " : "FAIL", fountainAt, skyAt, skyAt - fountainAt, leftAt, leftAt - skyAt);
     if (!ok) bad++;
   }
+  {   // the camp: a minute without music, he rests by the fire (the forest waits as it was), sound wakes him and the forest goes on
+    Game G; gameInit(G, 0); setScene(G, SC_FOREST3, 0);
+    static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;
+    double t = 0; const float dt = 1.0f / 30; int f = 0;
+    for (; f < 30 * 20; f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); }   // music for 20 s
+    float scrollBefore = 0; double t0Before = 0;
+    A.sounding = false; A.level = 0; A.beatNow = false; double campAt = 0, sleepAt = 0;
+    for (int k = 0; k < 30 * 100 && !campAt; k++, f++, t += dt) { gameUpdate(G, A, dt, t); if (G.scene == SC_CAMP) { campAt = t; scrollBefore = G.bc.scroll; t0Before = G.t0; } }
+    for (int k = 0; k < 30 * 30; k++, f++, t += dt) gameUpdate(G, A, dt, t);   // silent in camp for 30 s: still asleep (no limit)
+    const bool slept = G.scene == SC_CAMP && G.cp.b >= 19.9f && G.cp.b <= 20.1f && !G.cp.waking; sleepAt = t;
+    A.sounding = true; A.level = 0.7f; double wakeAt = 0; const double restFrom = t;
+    for (int k = 0; k < 30 * 60 && !wakeAt; k++, f++, t += dt) { A.beatNow = (f % 15) == 0; gameUpdate(G, A, dt, t); if (G.scene != SC_CAMP) wakeAt = t; }
+    const bool kept = G.scene == SC_FOREST3 && fabsf(G.bc.scroll - scrollBefore) < 1.0f && G.day == 2 && fabs((G.t0 - t0Before) - (wakeAt - campAt)) < 0.1;   // the forest is as he left it, its clocks moved on by the rest
+    const bool ok = campAt > 60 && campAt < 85 && slept && wakeAt > restFrom && wakeAt - restFrom < 14 && kept && G.fadeDir == 0;
+    printf("%s  camp: rested at %.0f s (%.0f s after the music stopped), asleep %d, woke %.1f s after sound returned, forest back %d (scroll kept %.1f -> %.1f), day %d\n", ok ? "ok  " : "FAIL", campAt, campAt - 20, (int)slept, wakeAt - restFrom, (int)(G.scene == SC_FOREST3), scrollBefore, G.bc.scroll, G.day);
+    (void)sleepAt;
+    if (!ok) bad++;
+  }
   {   // the pyramid: three boulders at 3.2, 6.2 and 9.2 s; he crouches under each, then it ends in a fade
     Game G; gameInit(G, 0); setScene(G, SC_PYRAMID, 0);
     static float eq[30]; AudioIn A; A.sounding = true; A.T = 0.5f; A.eqH = eq; A.level = 0.7f; A.rms = 0.1f;

@@ -79,7 +79,8 @@ static Pt drawBody(float hx, float hy, float lean, float dip = 0, bool lookBehin
   return Pt{sx, sy};
 }
 
-enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH, HM_CROUCH, HM_ROCKCOVER, HM_RUNLOOK };
+enum HeroMode : uint8_t { HM_RUN, HM_IDLE, HM_AIR, HM_HIDE, HM_SWING, HM_PLUNGE, HM_SWIM, HM_FIND, HM_PUSH, HM_CROUCH, HM_ROCKCOVER, HM_RUNLOOK, HM_SIT, HM_EAT, HM_SLEEP };
+static float CAMP_B = 0;   // seconds-in-beats at the camp (the web demo's S.camp.b): which bite of the fish he is on
 static float FIND_T = 0, HERO_PULSE = 0;   // seconds since he stopped at the treasure (the web demo's S.fnd), and the beat's pulse
 static float AIR_U = 0;
 static float SWING_K = 0;   // how far along its arc the vine is, -1..1 (the web demo's S.swK)   // how far through a jump he is, 0..1 (the web demo's S.jump / S.jd)
@@ -157,6 +158,25 @@ static void drawHero(float x, float feetY, double now, HeroMode mode) {
     drawBody(hx, hy, lean);
     drawLeg(legAF(hx, hy, 70, 128), hx, hy, false);
     armTo(sx, sy, sx + 3, sy - 5, false);
+    return;
+  }
+  if (mode == HM_SLEEP) {   // flat on his back, the hat over his face, knees up, hands on his chest; the chest rises and falls slowly
+    const float hx = x, y = feetY; const int br = sinf((float)(now * 1.6)) > 0 ? 1 : 0;
+    seg(hx, y - 3, hx + 5, y - 6, P_P, 2); seg(hx + 5, y - 6, hx + 10, y - 3, P_P, 2); R(hx + 10, y - 3, 3, 3, P_B);
+    seg(hx, y - 3, hx - 8, y - 3, P_G, 4); R(hx - 7, y - 6 - br, 4, 1, P_G); seg(hx - 7, y - 5, hx - 2, y - 5, px565(shadeC(C_G, 0.8f)), 2); R(hx - 3, y - 6, 2, 2, P_S);
+    R(hx - 12, y - 5, 4, 4, P_S); R(hx - 14, y - 7, 7, 3, P_H); R(hx - 14, y - 4, 2, 1, P_H);
+    return;
+  }
+  if (mode == HM_SIT || mode == HM_EAT) {   // sitting by the fire, knees up, facing it; eating: the fish goes up to the mouth on every second beat, a bite each time
+    const float hx = x, hy = feetY - 3, lean = 6 * DEG, sx = hx + TORSO_L * sinf(lean), sy = hy - TORSO_L * cosf(lean) + 1;
+    seg(hx - 1, hy, hx + 4, hy - 2, P_P_D, 2); seg(hx + 4, hy - 2, hx + 6, feetY - 1, P_P_D, 2);
+    armTo(sx, sy, hx + 3, hy - 4, true);
+    drawBody(hx, hy, lean);
+    seg(hx, hy, hx + 5, hy - 2, P_P, 2); seg(hx + 5, hy - 2, hx + 7, feetY - 1, P_P, 2); R(hx + 6, feetY - 2, 4, 2, P_B);
+    float up = 0; int bites = 0;
+    if (mode == HM_EAT) { const float e = (CAMP_B - 6) / 2, u = e - floorf(e); bites = (int)floorf(e); up = u < 0.3f ? u / 0.3f : u < 0.55f ? 1 : u < 0.85f ? 1 - (u - 0.55f) / 0.3f : 0; up = up * up * (3 - 2 * up); }
+    const Pt hand = armTo(sx, sy, hx + 5 + (sx + 3 - hx - 5) * up, hy - 4 + (sy - 1 - hy + 4) * up, false);
+    if (mode == HM_EAT && bites < 5) { seg(hand.x + 1, hand.y + 3, hand.x + 1, hand.y - 3, rgb(130, 80, 30), 1); R(hand.x, hand.y - 8, 3, 6 - bites, rgb(220, 140, 90)); R(hand.x, hand.y - 8, 3, 1, rgb(250, 190, 120)); }   // the fish on a stick, eaten from the top
     return;
   }
   if (mode == HM_HIDE) {   // crouched small behind the bush: knees up, back bent, head down, arms round the knees

@@ -49,9 +49,9 @@
 #define KS_DIAG 0  // (MP3 stage 0) 1: heap / task diagnostics on the serial port (KsDiag.h), nothing else changes
 #if KS_DIAG
 #include "KsDiag.h"
-#define BUILD_TAG "B16k+D"
+#define BUILD_TAG "B16l+D"
 #else
-#define BUILD_TAG "B16k"
+#define BUILD_TAG "B16l"
 #endif
 
 #if !defined(ARDUINO_USB_MODE) || ARDUINO_USB_MODE != 0
